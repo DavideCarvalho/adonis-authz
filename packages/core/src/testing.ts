@@ -11,7 +11,7 @@ const bob: UserRef = { type: 'user', id: '2' };
 /**
  * The shared {@link PermissionStore} contract suite. Each store driver re-runs
  * it (see the memory and Lucid `*.contract.spec.ts`). Exposed on the public
- * `@agora/authz/testing` subpath so downstream stores can self-validate.
+ * `@adonis-agora/authz/testing` subpath so downstream stores can self-validate.
  */
 export function runPermissionStoreContract(name: string, factory: StoreFactory): void {
   describe(`PermissionStore contract: ${name}`, () => {

@@ -1,6 +1,6 @@
 ---
 title: Getting started
-description: Install @agora/authz, run the migration, grant a permission and check it through Bouncer.
+description: Install @adonis-agora/authz, run the migration, grant a permission and check it through Bouncer.
 icon: Rocket
 ---
 
@@ -13,8 +13,8 @@ import { Steps, Step } from 'fumadocs-ui/components/steps';
 ### Install & configure
 
 ```sh
-npm i @agora/authz
-node ace configure @agora/authz
+npm i @adonis-agora/authz
+node ace configure @adonis-agora/authz
 ```
 
 `configure` registers the provider and commands, and publishes:
@@ -51,7 +51,7 @@ node ace authz:assign editor 42          # role → user (id 42)
 …or programmatically:
 
 ```ts
-import { AuthzService } from '@agora/authz'
+import { AuthzService } from '@adonis-agora/authz'
 import app from '@adonisjs/core/services/app'
 
 const authz = await app.container.make(AuthzService)
@@ -93,6 +93,6 @@ In Edge templates:
 <Callout type="info">
   The `resource` argument (`post` above) is accepted for ergonomic call sites,
   but RBAC grants are model-less, so the default `can` ability does not inspect
-  it. Combine `@agora/authz` with a regular Bouncer policy when you need
+  it. Combine `@adonis-agora/authz` with a regular Bouncer policy when you need
   per-record ownership checks.
 </Callout>

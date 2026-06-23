@@ -7,8 +7,8 @@ import AuthzMakeRole from './make_role.js';
 import AuthzSync from './sync.js';
 
 /**
- * The commands barrel for `@agora/authz`. Registered in an app's `adonisrc` via
- * `rcFile.addCommand('@agora/authz/commands')` (done by this package's
+ * The commands barrel for `@adonis-agora/authz`. Registered in an app's `adonisrc` via
+ * `rcFile.addCommand('@adonis-agora/authz/commands')` (done by this package's
  * `configure`). A {@link ListLoader} over the six authz commands provides their
  * metadata and constructors to the ace kernel.
  */

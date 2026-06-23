@@ -1,7 +1,7 @@
 {{{
   exports({ to: app.configPath('authz.ts') })
 }}}
-import { defineConfig, stores } from '@agora/authz'
+import { defineConfig, stores } from '@adonis-agora/authz'
 
 export default defineConfig({
   /**

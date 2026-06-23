@@ -1,6 +1,6 @@
 ---
 title: Bouncer integration
-description: How @agora/authz registers static abilities backed by the store, and how to use them in controllers and Edge.
+description: How @adonis-agora/authz registers static abilities backed by the store, and how to use them in controllers and Edge.
 icon: Shield
 ---
 
@@ -10,7 +10,7 @@ import { Callout } from 'fumadocs-ui/components/callout';
 
 Bouncer abilities are defined ahead of time:
 `Bouncer.ability((user, ...args) => boolean | AuthorizationResponse)`. There is
-no runtime API to register one ability per database row. So `@agora/authz`
+no runtime API to register one ability per database row. So `@adonis-agora/authz`
 registers a **small fixed set** of abilities whose body consults the DB-backed
 store.
 
@@ -18,7 +18,7 @@ store.
 
 ```ts title="app/abilities/authz.ts"
 import app from '@adonisjs/core/services/app'
-import { AuthzService, defineAuthzAbilities } from '@agora/authz'
+import { AuthzService, defineAuthzAbilities } from '@adonis-agora/authz'
 
 const service = await app.container.make(AuthzService)
 
@@ -59,7 +59,7 @@ In Edge templates (share `bouncer.edgeHelpers` with the view as usual):
 <Callout type="info">
   RBAC grants are model-less, so the optional `resource` is not inspected by the
   default `can` ability. For per-record ownership ("can edit **this** post"),
-  pair `@agora/authz` with a normal Bouncer policy and combine the checks.
+  pair `@adonis-agora/authz` with a normal Bouncer policy and combine the checks.
 </Callout>
 
 ## Resolving the service directly

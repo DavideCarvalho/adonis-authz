@@ -13,7 +13,7 @@ the same semantics as the Lucid store but keeps state in-process, so tests stay
 fast and isolated.
 
 ```ts
-import { AuthzService, MemoryPermissionStore } from '@agora/authz'
+import { AuthzService, MemoryPermissionStore } from '@adonis-agora/authz'
 
 const store = new MemoryPermissionStore()
 await store.givePermissionToRole('editor', 'posts.*')
@@ -27,7 +27,7 @@ await authz.can({ id: '1' }, 'posts.edit') // true (wildcard)
 
 ```ts
 import { Bouncer } from '@adonisjs/bouncer'
-import { AuthzService, MemoryPermissionStore, defineAuthzAbilities } from '@agora/authz'
+import { AuthzService, MemoryPermissionStore, defineAuthzAbilities } from '@adonis-agora/authz'
 
 const store = new MemoryPermissionStore()
 await store.assignRole({ type: 'user', id: '1' }, 'admin')
@@ -43,10 +43,10 @@ await bouncer.denies('can', 'posts.edit')  // true (no grant)
 
 If you implement your own `PermissionStore`, validate it against the same
 contract the built-in stores pass. It is exported from the
-`@agora/authz/testing` subpath and runs under Vitest.
+`@adonis-agora/authz/testing` subpath and runs under Vitest.
 
 ```ts
-import { runPermissionStoreContract } from '@agora/authz/testing'
+import { runPermissionStoreContract } from '@adonis-agora/authz/testing'
 import { MyStore } from './my_store.js'
 
 runPermissionStoreContract('MyStore', () => new MyStore())

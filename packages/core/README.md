@@ -1,4 +1,4 @@
-# `@agora/authz`
+# `@adonis-agora/authz`
 
 > Bouncer-integrated, DB-backed **RBAC** for **AdonisJS** — roles, permissions,
 > wildcard matching and multi-tenancy on top of
@@ -14,8 +14,8 @@ do today.
 ## Install
 
 ```sh
-npm i @agora/authz
-node ace configure @agora/authz
+npm i @adonis-agora/authz
+node ace configure @adonis-agora/authz
 node ace migration:run   # if you use the Lucid store
 ```
 

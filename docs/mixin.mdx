@@ -6,15 +6,15 @@ icon: Layers
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
-The optional `hasPermissions` mixin (exported from the `@agora/authz/mixins`
+The optional `hasPermissions` mixin (exported from the `@adonis-agora/authz/mixins`
 subpath) adds RBAC sugar to a Lucid model. Every method delegates to the
 `AuthzService` and the store.
 
 ```ts title="app/models/user.ts"
 import { compose } from '@adonisjs/core/helpers'
 import { BaseModel } from '@adonisjs/lucid/orm'
-import { hasPermissions } from '@agora/authz/mixins'
-import { AuthzService } from '@agora/authz'
+import { hasPermissions } from '@adonis-agora/authz/mixins'
+import { AuthzService } from '@adonis-agora/authz'
 import app from '@adonisjs/core/services/app'
 
 export default class User extends compose(

@@ -28,13 +28,13 @@ export default class AuthzProvider {
       } = config;
 
       if (!providers || Object.keys(providers).length === 0) {
-        throw new Error('@agora/authz: config.stores is empty — define at least one store.');
+        throw new Error('@adonis-agora/authz: config.stores is empty — define at least one store.');
       }
 
       const activeKey = defaultStore ?? Object.keys(providers)[0];
       if (!activeKey || !providers[activeKey]) {
         throw new Error(
-          `@agora/authz: config.default is "${String(defaultStore)}", but config.stores.${String(
+          `@adonis-agora/authz: config.default is "${String(defaultStore)}", but config.stores.${String(
             defaultStore,
           )} is not defined`,
         );

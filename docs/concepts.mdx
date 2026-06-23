@@ -38,7 +38,7 @@ literal. Matching is segment-based on `.`:
 | `posts`        | `posts.edit`         | ❌       |
 
 ```ts
-import { permissionMatches } from '@agora/authz'
+import { permissionMatches } from '@adonis-agora/authz'
 
 permissionMatches('posts.*', 'posts.edit') // true
 permissionMatches('posts.*', 'posts')      // false

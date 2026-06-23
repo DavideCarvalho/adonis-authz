@@ -27,7 +27,7 @@ export interface HasPermissions {
  *
  * ```ts
  * import { compose } from '@adonisjs/core/helpers'
- * import { hasPermissions } from '@agora/authz/mixins'
+ * import { hasPermissions } from '@adonis-agora/authz/mixins'
  * import authz from '#services/authz' // your resolved AuthzService
  *
  * export default class User extends compose(BaseModel, hasPermissions(() => authz)) {}
@@ -42,7 +42,7 @@ export function hasPermissions(resolve: () => AuthzService | Promise<AuthzServic
         // Resolved synchronously is not possible without the service; callers of
         // the async methods below never need this, but it is exposed for parity.
         throw new Error(
-          '@agora/authz: authzRef() requires the service; use the async helpers instead.',
+          '@adonis-agora/authz: authzRef() requires the service; use the async helpers instead.',
         );
       }
 
@@ -50,7 +50,9 @@ export function hasPermissions(resolve: () => AuthzService | Promise<AuthzServic
         const service = await authzService();
         const ref = service.refOf(this);
         if (!ref)
-          throw new Error('@agora/authz: could not resolve a user reference for this model.');
+          throw new Error(
+            '@adonis-agora/authz: could not resolve a user reference for this model.',
+          );
         await service.store.assignRole(ref, role, scope);
       }
 
@@ -65,7 +67,9 @@ export function hasPermissions(resolve: () => AuthzService | Promise<AuthzServic
         const service = await authzService();
         const ref = service.refOf(this);
         if (!ref)
-          throw new Error('@agora/authz: could not resolve a user reference for this model.');
+          throw new Error(
+            '@adonis-agora/authz: could not resolve a user reference for this model.',
+          );
         await service.store.giveUserPermission(ref, permission);
       }
 

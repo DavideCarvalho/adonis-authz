@@ -4,7 +4,7 @@
 import { BaseSchema } from '@adonisjs/lucid/schema'
 
 /**
- * RBAC tables for @agora/authz. This package NEVER owns a users table — users
+ * RBAC tables for @adonis-agora/authz. This package NEVER owns a users table — users
  * are referenced polymorphically by `(user_type, user_id)`. `tenant_id` is part
  * of the user-role PK ('' = the global scope) so the same (user, role) can be
  * granted per-tenant independently.

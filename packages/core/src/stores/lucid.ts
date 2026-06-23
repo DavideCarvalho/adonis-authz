@@ -43,7 +43,7 @@ export interface LucidPermissionStoreOptions {
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
 function assertSafeIdentifier(id: string): string {
   if (!IDENT.test(id))
-    throw new Error(`@agora/authz: unsafe SQL identifier: ${JSON.stringify(id)}`);
+    throw new Error(`@adonis-agora/authz: unsafe SQL identifier: ${JSON.stringify(id)}`);
   return id;
 }
 

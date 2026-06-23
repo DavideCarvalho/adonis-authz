@@ -2,7 +2,7 @@ import type Configure from '@adonisjs/core/commands/configure';
 import { stubsRoot } from './stubs/main.js';
 
 /**
- * `node ace configure @agora/authz` — auto-wires the package:
+ * `node ace configure @adonis-agora/authz` — auto-wires the package:
  *
  * 1. registers the service provider in `adonisrc.ts`;
  * 2. registers the ace commands barrel (`authz:make-role`, `authz:make-permission`,
@@ -17,8 +17,8 @@ export async function configure(command: Configure) {
   const codemods = await command.createCodemods();
 
   await codemods.updateRcFile((rcFile) => {
-    rcFile.addProvider('@agora/authz/authz_provider');
-    rcFile.addCommand('@agora/authz/commands');
+    rcFile.addProvider('@adonis-agora/authz/authz_provider');
+    rcFile.addCommand('@adonis-agora/authz/commands');
   });
 
   await codemods.makeUsingStub(stubsRoot, 'config/authz.stub', {});

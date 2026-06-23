@@ -91,3 +91,34 @@ const cache = authz.createCache()
 await authz.can(user, 'posts.edit', { cache })
 await authz.can(user, 'posts.delete', { cache }) // reuses the same fetch
 ```
+
+## Pairing with an authentication provider (AuthKit)
+
+`@adonis-agora/authz` never owns a users table — it identifies users by a
+polymorphic `UserRef`. When you pair it with an auth provider such as
+[`@adonis-agora/authkit`](/docs/authkit), point `resolveUserRef` at the
+`identityUserRef` seam so the provider's identity maps straight to a `UserRef`:
+
+```ts title="config/authz.ts"
+import { defineConfig, identityUserRef, stores } from '@adonis-agora/authz'
+
+export default defineConfig({
+  default: 'lucid',
+  stores: { lucid: stores.lucid() },
+  resolveUserRef: identityUserRef,
+})
+```
+
+`identityUserRef` reads a minimal, structural identity (`{ userId }`, tolerant of
+`{ id }`) — there is **no** import of authkit, so the dependency stays soft. It
+returns `{ type: 'user', id: String(identity.userId ?? identity.id) }`, falling
+back to the default resolver when neither is present.
+
+<Callout type="info">
+  **Division of responsibility.** Authentication owns **global roles**; authz
+  owns **DB-backed, fine-grained, tenant-scoped permissions**. Check a global
+  role through the auth provider (e.g. `identity.hasGlobalRole('admin')`) and a
+  fine-grained permission through authz (`bouncer.allows('can', 'posts.edit')`).
+  Do **not** seed or mirror the provider's roles into the authz tables — keep the
+  two stores separate.
+</Callout>

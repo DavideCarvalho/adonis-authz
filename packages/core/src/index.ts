@@ -7,10 +7,12 @@ export { permissionMatches, permissionSatisfied } from './permission_matcher.js'
 export {
   defaultResolveUserRef,
   GLOBAL_TENANT,
+  identityUserRef,
   normalizeTenant,
   normalizeUserRef,
 } from './user_ref.js';
 export type {
+  IdentityLike,
   ResolveUserRef,
   TenantScope,
   UserAuthz,

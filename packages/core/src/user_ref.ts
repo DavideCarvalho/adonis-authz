@@ -69,6 +69,30 @@ export function defaultResolveUserRef(user: unknown): UserRefInput | undefined {
   return undefined;
 }
 
+/**
+ * A minimal, structurally-typed authentication identity. Deliberately NOT
+ * imported from any auth package: it just describes the shape we read. AuthKit's
+ * `Identity` has `userId`; we stay tolerant of `id` and `type` too.
+ */
+export interface IdentityLike {
+  userId?: string | number;
+  id?: string | number;
+  type?: string;
+}
+
+/**
+ * Map an authentication identity (e.g. from `@adonis-agora/authkit`) to a
+ * {@link UserRef}. Wire it as `defineConfig({ resolveUserRef: identityUserRef })`
+ * when pairing authz with an auth provider — the provider owns global roles,
+ * authz owns DB-backed fine-grained permissions. Falls back to
+ * {@link defaultResolveUserRef} when no usable id is present.
+ */
+export function identityUserRef(identity: IdentityLike): UserRefInput | undefined {
+  const id = identity?.userId ?? identity?.id;
+  if (id == null) return defaultResolveUserRef(identity);
+  return { type: 'user', id: String(id) };
+}
+
 /** Tenant scope normalization: missing/empty → global. */
 export function normalizeTenant(scope?: TenantScope): string {
   return scope?.tenantId ?? GLOBAL_TENANT;

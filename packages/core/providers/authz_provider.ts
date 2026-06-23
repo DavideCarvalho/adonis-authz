@@ -1,6 +1,7 @@
 import type { ApplicationService } from '@adonisjs/core/types';
 import { AuthzService } from '../src/authz_service.js';
 import type { AuthzConfig } from '../src/define_config.js';
+import { ScopeRegistry } from '../src/scope.js';
 
 /**
  * Registers the {@link AuthzService} as a container singleton built from the
@@ -28,6 +29,7 @@ export default class AuthzProvider {
         resolveTenant,
         superAdminRoles,
         globalRoleGrants,
+        scopes,
       } = config;
 
       if (!providers || Object.keys(providers).length === 0) {
@@ -45,6 +47,15 @@ export default class AuthzProvider {
 
       const store = await providers[activeKey]({ app: this.app });
 
+      // A pre-built registry is used as-is; a builder callback registers onto a fresh one.
+      let registry: ScopeRegistry | undefined;
+      if (scopes instanceof ScopeRegistry) {
+        registry = scopes;
+      } else if (typeof scopes === 'function') {
+        registry = new ScopeRegistry();
+        scopes(registry);
+      }
+
       return new AuthzService({
         store,
         ...(superAdmin !== undefined ? { superAdmin } : {}),
@@ -53,6 +64,7 @@ export default class AuthzProvider {
         ...(resolveTenant !== undefined ? { resolveTenant } : {}),
         ...(superAdminRoles !== undefined ? { superAdminRoles } : {}),
         ...(globalRoleGrants !== undefined ? { globalRoleGrants } : {}),
+        ...(registry !== undefined ? { scopes: registry } : {}),
       });
     });
   }

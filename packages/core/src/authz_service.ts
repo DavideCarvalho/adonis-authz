@@ -1,6 +1,14 @@
 import { globalRolesFromContext } from './agora/context.js';
 import { PermissionCache } from './permission_cache.js';
 import { permissionSatisfied } from './permission_matcher.js';
+import {
+  type ResourceKey,
+  type ScopeConstraint,
+  ScopeRegistry,
+  normalizeScope,
+  scopeAll,
+  scopeNone,
+} from './scope.js';
 import type { PermissionStore } from './store.js';
 import {
   type ResolveUserRef,
@@ -54,6 +62,13 @@ export interface AuthzServiceOptions {
    * check time for the user's active global roles. No DB seeding.
    */
   globalRoleGrants?: Record<string, string[]>;
+  /**
+   * Query-scope registry (feature E). Pre-built {@link ScopeRegistry} mapping each
+   * resource to a scope filter for {@link AuthzService.scope} / the Lucid
+   * `accessibleBy` helper. A shared default registry is created when unset, so a
+   * host may also register via {@link AuthzService.scopes}.
+   */
+  scopes?: ScopeRegistry;
 }
 
 function normalizeTenantResolver(value: string | TenantScope | undefined): TenantScope | undefined {
@@ -82,6 +97,9 @@ export class AuthzService {
   private readonly superAdminRoles: ReadonlySet<string>;
   private readonly globalRoleGrants: Record<string, string[]> | undefined;
 
+  /** The query-scope registry (resource → scope filter). See {@link scope}. */
+  readonly scopes: ScopeRegistry;
+
   constructor(options: AuthzServiceOptions) {
     this.store = options.store;
     this.superAdmin = options.superAdmin;
@@ -90,6 +108,7 @@ export class AuthzService {
     this.resolveTenant = options.resolveTenant;
     this.superAdminRoles = new Set(options.superAdminRoles ?? []);
     this.globalRoleGrants = options.globalRoleGrants;
+    this.scopes = options.scopes ?? new ScopeRegistry();
   }
 
   /** Map a host user object to a canonical {@link UserRef} (or undefined). */
@@ -194,6 +213,56 @@ export class AuthzService {
       ? await options.cache.getPermissions(ref, scope)
       : await this.store.getPermissionsForUser(ref, scope);
     return permissionSatisfied([...granted, ...this.globalPermissionGrants()], permission);
+  }
+
+  /**
+   * Resolve the QUERY-SCOPE constraint for `user` against `resource` — the
+   * `accessibleBy` / Pundit `policy_scope` concept. Returns an ORM-neutral
+   * {@link ScopeConstraint} the Lucid `accessibleBy` helper turns into a
+   * parameterized `WHERE`.
+   *
+   * Mirrors {@link can}'s resolution order so scoping stays consistent with
+   * single-resource decisions:
+   *   1. super-admin (hook or global role) grants → `allow-all` (no filter);
+   *   2. a wildcard permission grant for `action` → `allow-all`;
+   *   3. the resource's registered scope filter → its constraint (fed the user's
+   *      effective roles/permissions/tenant so it derives from the SAME authz data);
+   *   4. otherwise (anonymous, or no scope registered) → `deny-all` (fail-closed).
+   *
+   * `action` (default `'viewAny'`) names the permission-grant check and is passed to
+   * the scope filter as the ability being scoped.
+   */
+  async scope(
+    user: unknown,
+    resource: ResourceKey,
+    options: { action?: string; scope?: TenantScope; cache?: PermissionCache } = {},
+  ): Promise<ScopeConstraint> {
+    const action = options.action ?? 'viewAny';
+    const ref = this.refOf(user);
+    // 4 (anonymous): no user → deny-all.
+    if (!ref) return scopeNone;
+
+    // 1. Super-admin (hook or global role) → allow-all. A `false` here actively
+    //    denies, mirroring `can`.
+    const superAdmin = await this.superAdminVerdict(ref, action);
+    if (superAdmin === true) return scopeAll;
+    if (superAdmin === false) return scopeNone;
+
+    const tenant = this.currentScope(options.scope);
+    const granted = options.cache
+      ? await options.cache.getPermissions(ref, tenant)
+      : await this.store.getPermissionsForUser(ref, tenant);
+    const permissions = [...granted, ...this.globalPermissionGrants()];
+
+    // 2. A wildcard permission grant for the scope action → allow-all.
+    if (permissionSatisfied(permissions, action)) return scopeAll;
+
+    // 3. The resource's registered scope filter.
+    const filter = this.scopes.resolve(resource);
+    if (!filter) return scopeNone; // fail-closed: unknown resource sees no rows.
+
+    const roles = await this.store.getRolesForUser(ref, tenant);
+    return normalizeScope(await filter({ user: ref, action, permissions, roles, tenant }));
   }
 
   /** Does the user have the named role (exact match, tenant-aware)? */

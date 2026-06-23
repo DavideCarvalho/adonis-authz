@@ -42,6 +42,34 @@ export type {
   TenantResolver,
 } from './authz_service.js';
 
+// Query-scope DSL (the `accessibleBy` constraint model).
+export {
+  and,
+  assertSafeIdentifier,
+  eq,
+  normalizeScope,
+  or,
+  SAFE_IDENTIFIER,
+  ScopeRegistry,
+  scopeAll,
+  scopeNone,
+  where,
+  whereIn,
+} from './scope.js';
+export type {
+  ResourceKey,
+  ScopeAll,
+  ScopeCondition,
+  ScopeConstraint,
+  ScopeFilter,
+  ScopeFilterContext,
+  ScopeGroup,
+  ScopeNode,
+  ScopeNone,
+  ScopeOperator,
+  ScopeResult,
+} from './scope.js';
+
 // Structural Agora context bridge (features B & C).
 export {
   AGORA_CONTEXT_ACCESSOR,

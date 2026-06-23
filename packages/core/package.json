@@ -43,6 +43,11 @@
       "import": "./dist/src/provisioning.js",
       "default": "./dist/src/provisioning.js"
     },
+    "./scope": {
+      "types": "./dist/src/scope_kit.d.ts",
+      "import": "./dist/src/scope_kit.js",
+      "default": "./dist/src/scope_kit.js"
+    },
     "./http": {
       "types": "./dist/src/http.d.ts",
       "import": "./dist/src/http.js",

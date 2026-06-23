@@ -1,4 +1,5 @@
 import type { SuperAdminHook, TenantResolver } from './authz_service.js';
+import type { ScopeRegistry } from './scope.js';
 import { type StoreProvider, stores } from './stores/factory.js';
 import type { ResolveUserRef } from './user_ref.js';
 
@@ -35,6 +36,13 @@ export interface AuthzConfig {
    * Permissions listed are created and attached to each role (idempotent).
    */
   catalog?: AuthzCatalog;
+  /**
+   * Query-scope registry (feature E). A pre-built {@link ScopeRegistry}, or a builder
+   * callback that registers resource scope filters on a fresh registry. Powers
+   * {@link AuthzService.scope} and the Lucid `accessibleBy` helper. Unset → an empty
+   * registry (every resource is deny-all / fail-closed until registered).
+   */
+  scopes?: ScopeRegistry | ((registry: ScopeRegistry) => void);
 }
 
 /** A declarative roles → permissions map for `authz:sync`. */

@@ -1,4 +1,4 @@
-import { globalRolesFromContext, tenantFromContext } from './agora/context.js';
+import { globalRolesFromContext } from './agora/context.js';
 import { PermissionCache } from './permission_cache.js';
 import { permissionSatisfied } from './permission_matcher.js';
 import type { PermissionStore } from './store.js';
@@ -36,12 +36,12 @@ export interface AuthzServiceOptions {
   tenant?: TenantResolver;
   /**
    * Opt-in tenant auto-scope (feature B). When a check gets no explicit tenant
-   * and no `tenant` resolver yields one, default the tenant to the active Agora
-   * context's `tenantId`. Set to `'context'` for the built-in
-   * {@link tenantFromContext} reader, or pass your own resolver. Default
-   * (unset) leaves behavior unchanged — no context → `''` global scope.
+   * and no `tenant` resolver yields one, default the tenant to a resolver's
+   * value. Pass {@link tenantFromContext} to default to the active Agora
+   * context's `tenantId`, or any custom resolver. Default (unset) leaves
+   * behavior unchanged — no context → `''` global scope.
    */
-  resolveTenant?: 'context' | (() => string | undefined);
+  resolveTenant?: () => string | undefined;
   /**
    * Opt-in global-role bridge (feature C). Global role names that grant
    * super-admin (short-circuit allow). Read structurally from the active Agora
@@ -87,10 +87,7 @@ export class AuthzService {
     this.superAdmin = options.superAdmin;
     this.resolveUserRef = options.resolveUserRef ?? defaultResolveUserRef;
     this.tenant = options.tenant;
-    this.resolveTenant =
-      options.resolveTenant === 'context'
-        ? tenantFromContext
-        : (options.resolveTenant ?? undefined);
+    this.resolveTenant = options.resolveTenant;
     this.superAdminRoles = new Set(options.superAdminRoles ?? []);
     this.globalRoleGrants = options.globalRoleGrants;
   }
@@ -121,28 +118,54 @@ export class AuthzService {
   }
 
   /**
-   * Global-role bridge (feature C): the user's active global roles read
-   * structurally from the Agora context store, intersected with config. Returns
-   * `{ superAdmin, grants }` where `grants` are the unioned permissions.
+   * The single super-admin guard, consulted identically by {@link can},
+   * {@link hasRole}, and {@link hasAnyRole}. Returns:
+   *
+   * - `true`  → super-admin granted (caller should short-circuit allow);
+   * - `false` → super-admin actively denied (caller should short-circuit deny);
+   * - `undefined` → no verdict, fall through to normal resolution.
+   *
+   * It applies the {@link SuperAdminHook} first (the only hook whose `false`
+   * denies), then the global super-admin roles (feature C).
    */
-  private globalRoleVerdict(): { superAdmin: boolean; grants: string[] } {
-    if (this.superAdminRoles.size === 0 && !this.globalRoleGrants) {
-      return { superAdmin: false, grants: [] };
+  private async superAdminVerdict(ref: UserRef, ability: string): Promise<boolean | undefined> {
+    if (this.superAdmin) {
+      const verdict = await this.superAdmin(ref, ability);
+      if (verdict === true) return true;
+      if (verdict === false) return false;
     }
-    const roles = globalRolesFromContext();
-    if (roles.length === 0) return { superAdmin: false, grants: [] };
+    if (this.isGlobalSuperAdmin()) return true;
+    return undefined;
+  }
 
-    for (const role of roles) {
-      if (this.superAdminRoles.has(role)) return { superAdmin: true, grants: [] };
+  /**
+   * Global-role bridge (feature C): is any of the user's active global roles
+   * (read structurally from the Agora context store) a configured super-admin
+   * role?
+   */
+  private isGlobalSuperAdmin(): boolean {
+    if (this.superAdminRoles.size === 0) return false;
+    for (const role of globalRolesFromContext()) {
+      if (this.superAdminRoles.has(role)) return true;
     }
+    return false;
+  }
+
+  /**
+   * Global-role bridge (feature C): the permissions/wildcards granted by the
+   * user's active global roles, unioned into the permission check in {@link can}.
+   * Roles ≠ permissions, so role checks never consult these.
+   */
+  private globalPermissionGrants(): string[] {
+    if (!this.globalRoleGrants) return [];
+    const roles = globalRolesFromContext();
+    if (roles.length === 0) return [];
     const grants: string[] = [];
-    if (this.globalRoleGrants) {
-      for (const role of roles) {
-        const perms = this.globalRoleGrants[role];
-        if (perms) grants.push(...perms);
-      }
+    for (const role of roles) {
+      const perms = this.globalRoleGrants[role];
+      if (perms) grants.push(...perms);
     }
-    return { superAdmin: false, grants };
+    return grants;
   }
 
   /** A fresh per-request permission cache bound to the active store. */
@@ -162,26 +185,15 @@ export class AuthzService {
     const ref = this.refOf(user);
     if (!ref) return false;
 
-    if (this.superAdmin) {
-      const verdict = await this.superAdmin(ref, permission);
-      if (verdict === true) return true;
-      if (verdict === false) return false;
-    }
-
-    // Global-role bridge (feature C): super-admin global role short-circuits;
-    // otherwise its grants are unioned into the permission check.
-    const globalRoles = this.globalRoleVerdict();
-    if (globalRoles.superAdmin) return true;
-    if (globalRoles.grants.length > 0 && permissionSatisfied(globalRoles.grants, permission)) {
-      return true;
-    }
+    const superAdmin = await this.superAdminVerdict(ref, permission);
+    if (superAdmin !== undefined) return superAdmin;
 
     const scope = this.currentScope(options.scope);
-    if (options.cache) {
-      return options.cache.satisfies(ref, permission, scope);
-    }
-    const granted = await this.store.getPermissionsForUser(ref, scope);
-    return permissionSatisfied(granted, permission);
+    // Single permission-union site: store grants ∪ global-role grants (feature C).
+    const granted = options.cache
+      ? await options.cache.getPermissions(ref, scope)
+      : await this.store.getPermissionsForUser(ref, scope);
+    return permissionSatisfied([...granted, ...this.globalPermissionGrants()], permission);
   }
 
   /** Does the user have the named role (exact match, tenant-aware)? */
@@ -193,13 +205,8 @@ export class AuthzService {
     const ref = this.refOf(user);
     if (!ref) return false;
 
-    if (this.superAdmin) {
-      const verdict = await this.superAdmin(ref, `role:${role}`);
-      if (verdict === true) return true;
-      if (verdict === false) return false;
-    }
-
-    if (this.globalRoleVerdict().superAdmin) return true;
+    const superAdmin = await this.superAdminVerdict(ref, `role:${role}`);
+    if (superAdmin !== undefined) return superAdmin;
 
     const scope = this.currentScope(options.scope);
     const roles = await this.store.getRolesForUser(ref, scope);
@@ -214,6 +221,10 @@ export class AuthzService {
   ): Promise<boolean> {
     const ref = this.refOf(user);
     if (!ref) return false;
+
+    const superAdmin = await this.superAdminVerdict(ref, `role:${roles.join(',')}`);
+    if (superAdmin !== undefined) return superAdmin;
+
     const scope = this.currentScope(options.scope);
     const owned = new Set(await this.store.getRolesForUser(ref, scope));
     return roles.some((r) => owned.has(r));

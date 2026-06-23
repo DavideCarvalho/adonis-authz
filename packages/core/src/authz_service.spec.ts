@@ -38,6 +38,14 @@ describe('AuthzService', () => {
     expect(await service.can(new User('1'), 'anything.at.all')).toBe(true);
   });
 
+  it('super-admin hook applies consistently to can, hasRole, AND hasAnyRole', async () => {
+    const { service } = makeService({ superAdmin: (u) => u.id === '1' });
+    const user = new User('1');
+    expect(await service.can(user, 'anything.at.all')).toBe(true);
+    expect(await service.hasRole(user, 'whatever')).toBe(true);
+    expect(await service.hasAnyRole(user, ['whatever', 'else'])).toBe(true);
+  });
+
   it('super-admin false short-circuits to deny', async () => {
     const { store, service } = makeService({ superAdmin: () => false });
     await store.givePermissionToRole('editor', 'posts.edit');

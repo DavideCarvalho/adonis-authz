@@ -15,7 +15,6 @@ export interface DiagnosticEvent {
   type?: string;
   /** Arbitrary structured payload (e.g. `{ orgId, userRef }`). */
   metadata?: Record<string, unknown>;
-  [key: string]: unknown;
 }
 
 /** Subscriber signature exposed by `@adonis-agora/diagnostics`. */

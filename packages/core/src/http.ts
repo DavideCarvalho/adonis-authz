@@ -24,7 +24,6 @@ interface CanHttpContext {
   /** The authenticated user, when an auth guard populated it. */
   auth?: { user?: unknown };
   response?: { json?: (body: unknown) => unknown };
-  [key: string]: unknown;
 }
 
 /** Minimal router shape: just `.post(path, handler)`. */

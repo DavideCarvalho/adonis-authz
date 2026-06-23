@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { AGORA_CONTEXT_ACCESSOR } from './agora/context.js';
+import { AGORA_CONTEXT_ACCESSOR, tenantFromContext } from './agora/context.js';
 import { AuthzService } from './authz_service.js';
 import { MemoryPermissionStore } from './stores/memory.js';
 
@@ -27,11 +27,11 @@ describe('feature B — tenant auto-scope', () => {
     expect(await service.can(user, 'reports.view')).toBe(false);
   });
 
-  it("resolveTenant: 'context' defaults the tenant to the context tenantId", async () => {
+  it('resolveTenant: tenantFromContext defaults the tenant to the context tenantId', async () => {
     const store = new MemoryPermissionStore();
     await store.givePermissionToRole('viewer', 'reports.view');
     await store.assignRole({ type: 'user', id: '1' }, 'viewer', { tenantId: 'acme' });
-    const service = new AuthzService({ store, resolveTenant: 'context' });
+    const service = new AuthzService({ store, resolveTenant: tenantFromContext });
 
     setContext({ tenantId: 'acme' });
     expect(await service.can(user, 'reports.view')).toBe(true);
@@ -44,7 +44,7 @@ describe('feature B — tenant auto-scope', () => {
     const store = new MemoryPermissionStore();
     await store.givePermissionToRole('viewer', 'reports.view');
     await store.assignRole({ type: 'user', id: '1' }, 'viewer', { tenantId: 'acme' });
-    const service = new AuthzService({ store, resolveTenant: 'context' });
+    const service = new AuthzService({ store, resolveTenant: tenantFromContext });
 
     setContext({ tenantId: 'other' });
     expect(await service.can(user, 'reports.view', { scope: { tenantId: 'acme' } })).toBe(true);
@@ -60,13 +60,32 @@ describe('feature B — tenant auto-scope', () => {
 });
 
 describe('feature C — global-role bridge', () => {
-  it('super-admin global role short-circuits allow', async () => {
+  it('super-admin global role short-circuits allow consistently across can/hasRole/hasAnyRole', async () => {
     const store = new MemoryPermissionStore();
     const service = new AuthzService({ store, superAdminRoles: ['platform:super'] });
 
     setContext({ get: () => ['platform:super'] });
     expect(await service.can(user, 'anything.at.all')).toBe(true);
     expect(await service.hasRole(user, 'whatever')).toBe(true);
+    // Regression: a global super-admin must agree across hasRole and hasAnyRole.
+    expect(await service.hasAnyRole(user, ['whatever'])).toBe(true);
+    expect(await service.hasAnyRole(user, ['a', 'b'])).toBe(true);
+  });
+
+  it('globalRoleGrants affect can() only, never role checks', async () => {
+    const store = new MemoryPermissionStore();
+    const service = new AuthzService({
+      store,
+      globalRoleGrants: { auditor: ['audit.*'] },
+    });
+
+    setContext({ get: () => ['auditor'] });
+    // Permission union sees the global grant...
+    expect(await service.can(user, 'audit.read')).toBe(true);
+    // ...but roles ≠ permissions: a permission grant is never a role.
+    expect(await service.hasRole(user, 'auditor')).toBe(false);
+    expect(await service.hasRole(user, 'audit.*')).toBe(false);
+    expect(await service.hasAnyRole(user, ['auditor', 'audit.read'])).toBe(false);
   });
 
   it('globalRoleGrants are unioned into the permission check', async () => {

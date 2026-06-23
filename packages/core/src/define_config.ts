@@ -14,11 +14,12 @@ export interface AuthzConfig {
   /** Resolve the active tenant for the current request (multi-tenancy). */
   tenant?: TenantResolver;
   /**
-   * Opt-in tenant auto-scope (feature B). `'context'` defaults an unscoped
-   * check's tenant to the active Agora context's `tenantId`; or pass a custom
-   * resolver. Default unset — behavior unchanged.
+   * Opt-in tenant auto-scope (feature B). Defaults an unscoped check's tenant
+   * to a resolver's value. Pass `tenantFromContext` to default to the active
+   * Agora context's `tenantId`, or any custom resolver. Default unset —
+   * behavior unchanged.
    */
-  resolveTenant?: 'context' | (() => string | undefined);
+  resolveTenant?: () => string | undefined;
   /**
    * Opt-in global-role bridge (feature C). Global role names (read structurally
    * from the Agora context store) that short-circuit allow as super-admin.

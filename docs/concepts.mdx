@@ -1,0 +1,85 @@
+---
+title: Concepts
+description: Roles, permissions, wildcard matching, polymorphic users and multi-tenancy.
+icon: BookOpen
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## Roles & permissions
+
+- A **permission** is a string like `posts.edit`. Grant it to a **role**, or
+  directly to a user.
+- A **role** is a named bundle of permissions. Assign roles to users.
+- A user's effective permissions are the **union** of every permission from
+  their roles plus any direct grants.
+
+```ts
+await authz.store.createRole('editor')
+await authz.store.givePermissionToRole('editor', 'posts.edit')
+await authz.store.assignRole({ type: 'user', id: '1' }, 'editor')
+
+await authz.store.giveUserPermission({ type: 'user', id: '1' }, 'billing.view') // direct
+```
+
+## Wildcard matching
+
+Only the **granted** side may use wildcards; the ability you check is always
+literal. Matching is segment-based on `.`:
+
+| Granted        | Required             | Matches? |
+| -------------- | -------------------- | -------- |
+| `posts.edit`   | `posts.edit`         | ✅       |
+| `posts.*`      | `posts.edit`         | ✅       |
+| `posts.*`      | `posts.edit.draft`   | ✅       |
+| `posts.*`      | `posts`              | ❌ (a trailing `*` needs one-or-more remaining segments) |
+| `posts.*`      | `comments.edit`      | ❌       |
+| `*`            | anything             | ✅       |
+| `posts`        | `posts.edit`         | ❌       |
+
+```ts
+import { permissionMatches } from '@agora/authz'
+
+permissionMatches('posts.*', 'posts.edit') // true
+permissionMatches('posts.*', 'posts')      // false
+```
+
+<Callout type="info">
+  Wildcard expansion happens in the service, not the database: the store returns
+  a user's grant set, and `AuthzService.can` runs the matcher over it.
+  `store.userHasPermission` itself matches names **exactly**.
+</Callout>
+
+## Polymorphic users
+
+The package never owns a users table. A user is a `{ type, id }` reference, so
+the same tables serve admins, customers, API clients, etc.
+
+```ts
+await authz.store.assignRole({ type: 'admin', id: '1' }, 'superuser')
+// A different type with the same id is a different subject:
+await authz.store.userHasPermission({ type: 'user', id: '1' }, 'system.manage') // false
+```
+
+The default `resolveUserRef` reads `user.id` (and an optional `user.type`).
+Override it in config to map your own user shape.
+
+## Multi-tenancy
+
+Role assignments can be scoped to a tenant. The empty string `''` is the
+**global** scope.
+
+```ts
+await authz.store.assignRole({ type: 'user', id: '1' }, 'viewer', { tenantId: 'acme' })
+```
+
+Visibility rules:
+
+- A **global** request (no tenant) sees only global rows.
+- A **tenant** request sees global rows **and** that tenant's rows.
+- A tenant-scoped assignment never leaks into another tenant or the global
+  scope.
+- **Direct user-permission grants are tenant-independent** — they always apply.
+
+Wire the active tenant once via the `tenant` resolver in config and every check
+becomes tenant-aware automatically.

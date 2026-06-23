@@ -1,0 +1,16 @@
+{
+  "title": "Authz",
+  "pages": [
+    "index",
+    "getting-started",
+    "concepts",
+    "config",
+    "bouncer-integration",
+    "mixin",
+    "commands",
+    "testing"
+  ],
+  "root": true,
+  "description": "Bouncer-integrated, DB-backed RBAC — roles, permissions, wildcard matching and multi-tenancy on top of @adonisjs/bouncer.",
+  "icon": "ShieldCheck"
+}

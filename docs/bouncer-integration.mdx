@@ -1,0 +1,82 @@
+---
+title: Bouncer integration
+description: How @agora/authz registers static abilities backed by the store, and how to use them in controllers and Edge.
+icon: Shield
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## Why static abilities
+
+Bouncer abilities are defined ahead of time:
+`Bouncer.ability((user, ...args) => boolean | AuthorizationResponse)`. There is
+no runtime API to register one ability per database row. So `@agora/authz`
+registers a **small fixed set** of abilities whose body consults the DB-backed
+store.
+
+`configure` publishes them to `app/abilities/authz.ts`:
+
+```ts title="app/abilities/authz.ts"
+import app from '@adonisjs/core/services/app'
+import { AuthzService, defineAuthzAbilities } from '@agora/authz'
+
+const service = await app.container.make(AuthzService)
+
+export const { can, hasRole } = defineAuthzAbilities(service)
+```
+
+- `can(user, permission, resource?)` — allows when the user's grants satisfy
+  `permission` (with wildcards). Denies with HTTP 403 otherwise.
+- `hasRole(user, role)` — allows when the user holds the named role.
+
+Both deny anonymous users.
+
+## Using them
+
+```ts
+import { can, hasRole } from '#abilities/authz'
+
+// Boolean (no throw):
+await ctx.bouncer.allows('can', 'posts.edit', post)
+await ctx.bouncer.denies('can', 'posts.delete')
+
+// Throwing (E_AUTHORIZATION_FAILURE → 403):
+await ctx.bouncer.authorize('hasRole', 'admin')
+```
+
+In Edge templates (share `bouncer.edgeHelpers` with the view as usual):
+
+```edge
+@can('can', 'posts.edit')
+  <a href="/posts/{{ post.id }}/edit">Edit</a>
+@end
+
+@cannot('hasRole', 'admin')
+  <p>Admins only.</p>
+@end
+```
+
+<Callout type="info">
+  RBAC grants are model-less, so the optional `resource` is not inspected by the
+  default `can` ability. For per-record ownership ("can edit **this** post"),
+  pair `@agora/authz` with a normal Bouncer policy and combine the checks.
+</Callout>
+
+## Resolving the service directly
+
+Outside of Bouncer you can use the engine directly:
+
+```ts
+const authz = await app.container.make(AuthzService)
+await authz.can(user, 'posts.edit')          // wildcard-aware
+await authz.hasRole(user, 'admin')
+await authz.hasAnyRole(user, ['admin', 'editor'])
+```
+
+For a request that runs many checks, share a cache to coalesce the grant read:
+
+```ts
+const cache = authz.createCache()
+await authz.can(user, 'posts.edit', { cache })
+await authz.can(user, 'posts.delete', { cache }) // reuses the same fetch
+```

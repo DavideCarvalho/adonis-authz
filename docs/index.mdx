@@ -1,0 +1,42 @@
+---
+title: Authz
+description: Bouncer-integrated, DB-backed RBAC for AdonisJS — roles, permissions, wildcard matching and multi-tenancy that plug into @adonisjs/bouncer rather than replacing it.
+icon: ShieldCheck
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+**`@agora/authz`** adds database-backed **role / permission** authorization
+(RBAC) to AdonisJS, integrated with [`@adonisjs/bouncer`](https://docs.adonisjs.com/guides/security/authorization).
+
+It does **not** replace Bouncer. Bouncer has no runtime API to register one
+ability per database row, so this package registers a small fixed set of static
+abilities — `can` and `hasRole` — whose body consults a DB-backed
+**permission store**. You keep writing `ctx.bouncer.allows(...)` and `@can(...)`
+exactly as before.
+
+## Highlights
+
+- **Roles & permissions in the database** — assign roles to users, grant
+  permissions to roles, or grant permissions directly to a user.
+- **Wildcard matching** — a grant of `posts.*` satisfies a check for
+  `posts.edit` (spatie/Laravel-style, segment-based).
+- **Multi-tenancy** — role assignments can be scoped to a tenant; global grants
+  always apply.
+- **Polymorphic users** — never owns a users table; users are referenced by
+  `(type, id)`, so any model (or even non-Lucid identity) works.
+- **Pluggable stores** — a `lucid` store for production and a zero-dependency
+  `memory` store for tests, selected with the drivers-in-core config idiom.
+
+<Callout type="info">
+  This library is a faithful port of the NestJS `nestjs-authz` core (the gate
+  resolution order, the wildcard matcher and the store contract), adapted to
+  Bouncer and the AdonisJS provider/config conventions.
+</Callout>
+
+## Next steps
+
+- [Getting started](/docs/authz/getting-started)
+- [Concepts](/docs/authz/concepts) — roles, permissions, wildcards, tenancy
+- [Configuration](/docs/authz/config) — the store drivers
+- [Bouncer integration](/docs/authz/bouncer-integration)

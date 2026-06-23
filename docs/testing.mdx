@@ -1,0 +1,61 @@
+---
+title: Testing
+description: Use the memory store and the shared store contract suite to test authorization deterministically.
+icon: FlaskConical
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## The memory store
+
+For tests, point `default` at the `memory` store (or build one inline). It has
+the same semantics as the Lucid store but keeps state in-process, so tests stay
+fast and isolated.
+
+```ts
+import { AuthzService, MemoryPermissionStore } from '@agora/authz'
+
+const store = new MemoryPermissionStore()
+await store.givePermissionToRole('editor', 'posts.*')
+await store.assignRole({ type: 'user', id: '1' }, 'editor')
+
+const authz = new AuthzService({ store })
+await authz.can({ id: '1' }, 'posts.edit') // true (wildcard)
+```
+
+## Testing a Bouncer ability
+
+```ts
+import { Bouncer } from '@adonisjs/bouncer'
+import { AuthzService, MemoryPermissionStore, defineAuthzAbilities } from '@agora/authz'
+
+const store = new MemoryPermissionStore()
+await store.assignRole({ type: 'user', id: '1' }, 'admin')
+
+const abilities = defineAuthzAbilities(new AuthzService({ store }))
+const bouncer = new Bouncer({ id: '1' }, abilities)
+
+await bouncer.allows('hasRole', 'admin')   // true
+await bouncer.denies('can', 'posts.edit')  // true (no grant)
+```
+
+## The shared store contract
+
+If you implement your own `PermissionStore`, validate it against the same
+contract the built-in stores pass. It is exported from the
+`@agora/authz/testing` subpath and runs under Vitest.
+
+```ts
+import { runPermissionStoreContract } from '@agora/authz/testing'
+import { MyStore } from './my_store.js'
+
+runPermissionStoreContract('MyStore', () => new MyStore())
+```
+
+The suite covers idempotency, role/permission grants and revokes, direct grants,
+per-user isolation, tenant visibility and polymorphic user types.
+
+<Callout type="info">
+  The contract factory must return a **fresh, isolated** store per call so cases
+  do not bleed into one another.
+</Callout>

@@ -1,0 +1,54 @@
+---
+title: Lucid mixin
+description: Add assignRole / can / getRoles sugar directly to your user model.
+icon: Layers
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The optional `hasPermissions` mixin (exported from the `@agora/authz/mixins`
+subpath) adds RBAC sugar to a Lucid model. Every method delegates to the
+`AuthzService` and the store.
+
+```ts title="app/models/user.ts"
+import { compose } from '@adonisjs/core/helpers'
+import { BaseModel } from '@adonisjs/lucid/orm'
+import { hasPermissions } from '@agora/authz/mixins'
+import { AuthzService } from '@agora/authz'
+import app from '@adonisjs/core/services/app'
+
+export default class User extends compose(
+  BaseModel,
+  hasPermissions(() => app.container.make(AuthzService)),
+) {
+  // ...your columns
+}
+```
+
+The factory takes a resolver (sync or async) for the `AuthzService`, so the
+mixin never eagerly imports the container.
+
+## Methods
+
+```ts
+const user = await User.findOrFail(1)
+
+await user.assignRole('editor')
+await user.assignRole('viewer', { tenantId: 'acme' })
+await user.removeRole('editor')
+
+await user.givePermission('billing.view')   // direct grant
+await user.revokePermission('billing.view')
+
+await user.getRoles()                        // string[]
+await user.getPermissions()                  // string[] (role-derived ∪ direct)
+
+await user.can('posts.edit')                 // wildcard-aware boolean
+await user.hasRole('admin')
+```
+
+<Callout type="info">
+  The mixin maps the model to a `{ type, id }` reference using the configured
+  `resolveUserRef`. The default reads `this.id`; set a `type` via
+  `resolveUserRef` if you store multiple subject kinds.
+</Callout>

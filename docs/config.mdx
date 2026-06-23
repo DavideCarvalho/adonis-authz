@@ -1,0 +1,116 @@
+---
+title: Configuration
+description: The drivers-in-core config idiom — select a permission store, wire the super-admin hook, user-ref mapping and tenant resolver.
+icon: Settings
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+`config/authz.ts` uses `defineConfig` plus the `stores` factory. Each store is a
+lazy thunk — the `lucid` store imports `@adonisjs/lucid` only when selected, so
+the peer dependency stays optional.
+
+```ts title="config/authz.ts"
+import { defineConfig, stores } from '@agora/authz'
+
+export default defineConfig({
+  default: 'lucid',
+  stores: {
+    memory: stores.memory(),
+    lucid: stores.lucid({ /* connection, tables, autoCreateSchema */ }),
+  },
+})
+```
+
+## Stores
+
+<Tabs items={['Lucid', 'Memory']}>
+<Tab value="Lucid">
+
+Persists RBAC in your database via `@adonisjs/lucid`.
+
+```ts
+stores.lucid({
+  connection: 'pg',        // defaults to the app's default connection
+  autoCreateSchema: false, // recommended: use the published migration instead
+  tables: {                // optional name overrides
+    roles: 'authz_roles',
+  },
+})
+```
+
+With `autoCreateSchema` left on (the default), the store runs
+`CREATE TABLE IF NOT EXISTS` on first use. Set it to `false` and run the
+published migration in production so schema changes are explicit.
+
+</Tab>
+<Tab value="Memory">
+
+A zero-dependency, in-process store. Identical semantics to the Lucid store
+(idempotency, tenant visibility, direct-grant rules), ideal for tests and tiny
+apps. State is lost on restart.
+
+```ts
+stores.memory()
+```
+
+</Tab>
+</Tabs>
+
+## Super-admin hook
+
+Return `true` to allow, `false` to deny, or `undefined` to fall through to the
+normal RBAC resolution. It receives the resolved `{ type, id }` reference.
+
+```ts
+defineConfig({
+  // ...
+  superAdmin: (user) => user.id === '1',
+})
+```
+
+<Callout type="warn">
+  The super-admin hook is the only hook whose `false` actively **denies** —
+  it short-circuits even when a matching grant exists.
+</Callout>
+
+## Mapping a user to a reference
+
+By default `user.id` (and optional `user.type`) is used. Override to fit your
+model:
+
+```ts
+defineConfig({
+  resolveUserRef: (user) => ({ type: 'account', id: user.uid }),
+})
+```
+
+## Tenant resolver
+
+Return a tenant id string (or `{ tenantId }`) for the current request; omit it
+for single-tenant apps.
+
+```ts
+import { HttpContext } from '@adonisjs/core/http'
+
+defineConfig({
+  tenant: () => HttpContext.getOrFail().request.header('x-tenant'),
+})
+```
+
+## Sync catalog
+
+Declare roles → permissions to seed with `node ace authz:sync`:
+
+```ts
+defineConfig({
+  catalog: {
+    permissions: ['system.manage'],
+    roles: {
+      editor: ['posts.*'],
+      viewer: ['posts.view', 'comments.view'],
+    },
+  },
+})
+```

@@ -1,0 +1,98 @@
+---
+title: Getting started
+description: Install @agora/authz, run the migration, grant a permission and check it through Bouncer.
+icon: Rocket
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+<Steps>
+
+<Step>
+### Install & configure
+
+```sh
+npm i @agora/authz
+node ace configure @agora/authz
+```
+
+`configure` registers the provider and commands, and publishes:
+
+- `config/authz.ts` — the store configuration;
+- `app/abilities/authz.ts` — the `can` / `hasRole` Bouncer abilities;
+- a Lucid migration for the RBAC tables.
+</Step>
+
+<Step>
+### Run the migration
+
+If you use the `lucid` store (the default), create the tables:
+
+```sh
+node ace migration:run
+```
+
+The migration creates `authz_roles`, `authz_permissions`,
+`authz_role_permission`, `authz_user_role` and `authz_user_permission`. No users
+table is touched — users are referenced polymorphically.
+</Step>
+
+<Step>
+### Grant a permission
+
+From the CLI:
+
+```sh
+node ace authz:grant editor posts.edit   # permission → role
+node ace authz:assign editor 42          # role → user (id 42)
+```
+
+…or programmatically:
+
+```ts
+import { AuthzService } from '@agora/authz'
+import app from '@adonisjs/core/services/app'
+
+const authz = await app.container.make(AuthzService)
+await authz.store.givePermissionToRole('editor', 'posts.edit')
+await authz.store.assignRole({ type: 'user', id: '42' }, 'editor')
+```
+</Step>
+
+<Step>
+### Check it through Bouncer
+
+```ts
+import { can, hasRole } from '#abilities/authz'
+
+router.put('/posts/:id', async (ctx) => {
+  const post = await Post.findOrFail(ctx.params.id)
+
+  // boolean check (wildcards apply: posts.* ⊇ posts.edit)
+  if (await ctx.bouncer.allows('can', 'posts.edit', post)) {
+    // ...
+  }
+
+  // throwing check (HTTP 403 on deny)
+  await ctx.bouncer.authorize('hasRole', 'admin')
+})
+```
+
+In Edge templates:
+
+```edge
+@can('can', 'posts.edit')
+  <a href="/posts/{{ post.id }}/edit">Edit</a>
+@end
+```
+</Step>
+
+</Steps>
+
+<Callout type="info">
+  The `resource` argument (`post` above) is accepted for ergonomic call sites,
+  but RBAC grants are model-less, so the default `can` ability does not inspect
+  it. Combine `@agora/authz` with a regular Bouncer policy when you need
+  per-record ownership checks.
+</Callout>

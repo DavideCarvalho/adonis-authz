@@ -6,6 +6,7 @@
     "concepts",
     "config",
     "bouncer-integration",
+    "agora-integration",
     "mixin",
     "commands",
     "testing"

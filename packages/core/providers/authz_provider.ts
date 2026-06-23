@@ -25,6 +25,9 @@ export default class AuthzProvider {
         superAdmin,
         resolveUserRef,
         tenant,
+        resolveTenant,
+        superAdminRoles,
+        globalRoleGrants,
       } = config;
 
       if (!providers || Object.keys(providers).length === 0) {
@@ -47,6 +50,9 @@ export default class AuthzProvider {
         ...(superAdmin !== undefined ? { superAdmin } : {}),
         ...(resolveUserRef !== undefined ? { resolveUserRef } : {}),
         ...(tenant !== undefined ? { tenant } : {}),
+        ...(resolveTenant !== undefined ? { resolveTenant } : {}),
+        ...(superAdminRoles !== undefined ? { superAdminRoles } : {}),
+        ...(globalRoleGrants !== undefined ? { globalRoleGrants } : {}),
       });
     });
   }

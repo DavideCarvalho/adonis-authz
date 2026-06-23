@@ -42,6 +42,16 @@ export type {
   TenantResolver,
 } from './authz_service.js';
 
+// Structural Agora context bridge (features B & C).
+export {
+  AGORA_CONTEXT_ACCESSOR,
+  globalRolesFromContext,
+  readContextAccessor,
+  readContextValue,
+  tenantFromContext,
+} from './agora/context.js';
+export type { AgoraContextAccessor } from './agora/context.js';
+
 // Bouncer integration helpers.
 export { authzAbilities, defineAuthzAbilities } from './bouncer/abilities.js';
 export type { AuthzAbilities } from './bouncer/abilities.js';

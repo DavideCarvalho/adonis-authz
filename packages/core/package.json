@@ -38,6 +38,16 @@
       "import": "./dist/src/mixins.js",
       "default": "./dist/src/mixins.js"
     },
+    "./provisioning": {
+      "types": "./dist/src/provisioning.d.ts",
+      "import": "./dist/src/provisioning.js",
+      "default": "./dist/src/provisioning.js"
+    },
+    "./http": {
+      "types": "./dist/src/http.d.ts",
+      "import": "./dist/src/http.js",
+      "default": "./dist/src/http.js"
+    },
     "./testing": {
       "types": "./dist/src/testing.d.ts",
       "import": "./dist/src/testing.js",
@@ -54,11 +64,15 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "peerDependencies": {
+    "@adonis-agora/diagnostics": "^0.1.0",
     "@adonisjs/bouncer": "^4.0.0",
     "@adonisjs/core": "^7.3.0",
     "@adonisjs/lucid": "^22.4.0"
   },
   "peerDependenciesMeta": {
+    "@adonis-agora/diagnostics": {
+      "optional": true
+    },
     "@adonisjs/bouncer": {
       "optional": true
     },

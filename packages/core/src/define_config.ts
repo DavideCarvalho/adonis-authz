@@ -14,6 +14,22 @@ export interface AuthzConfig {
   /** Resolve the active tenant for the current request (multi-tenancy). */
   tenant?: TenantResolver;
   /**
+   * Opt-in tenant auto-scope (feature B). `'context'` defaults an unscoped
+   * check's tenant to the active Agora context's `tenantId`; or pass a custom
+   * resolver. Default unset — behavior unchanged.
+   */
+  resolveTenant?: 'context' | (() => string | undefined);
+  /**
+   * Opt-in global-role bridge (feature C). Global role names (read structurally
+   * from the Agora context store) that short-circuit allow as super-admin.
+   */
+  superAdminRoles?: string[];
+  /**
+   * Opt-in global-role bridge (feature C). Global role → permissions/wildcards
+   * unioned into checks for the user's active global roles. No DB seeding.
+   */
+  globalRoleGrants?: Record<string, string[]>;
+  /**
    * Declared roles → permissions catalog, seeded by `node ace authz:sync`.
    * Permissions listed are created and attached to each role (idempotent).
    */

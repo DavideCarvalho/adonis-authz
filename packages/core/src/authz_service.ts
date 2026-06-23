@@ -1,3 +1,4 @@
+import { globalRolesFromContext, tenantFromContext } from './agora/context.js';
 import { PermissionCache } from './permission_cache.js';
 import { permissionSatisfied } from './permission_matcher.js';
 import type { PermissionStore } from './store.js';
@@ -8,6 +9,8 @@ import {
   defaultResolveUserRef,
   normalizeUserRef,
 } from './user_ref.js';
+
+export { tenantFromContext } from './agora/context.js';
 
 /**
  * Super-admin hook (ported from nestjs-authz). Receives the mapped {@link UserRef}
@@ -31,6 +34,26 @@ export interface AuthzServiceOptions {
   superAdmin?: SuperAdminHook;
   resolveUserRef?: ResolveUserRef;
   tenant?: TenantResolver;
+  /**
+   * Opt-in tenant auto-scope (feature B). When a check gets no explicit tenant
+   * and no `tenant` resolver yields one, default the tenant to the active Agora
+   * context's `tenantId`. Set to `'context'` for the built-in
+   * {@link tenantFromContext} reader, or pass your own resolver. Default
+   * (unset) leaves behavior unchanged — no context → `''` global scope.
+   */
+  resolveTenant?: 'context' | (() => string | undefined);
+  /**
+   * Opt-in global-role bridge (feature C). Global role names that grant
+   * super-admin (short-circuit allow). Read structurally from the active Agora
+   * context store (`globalRoles`, written by authkit). No DB seeding.
+   */
+  superAdminRoles?: string[];
+  /**
+   * Opt-in global-role bridge (feature C). Map of global role name →
+   * permissions/wildcards that role grants. Unioned into permission checks at
+   * check time for the user's active global roles. No DB seeding.
+   */
+  globalRoleGrants?: Record<string, string[]>;
 }
 
 function normalizeTenantResolver(value: string | TenantScope | undefined): TenantScope | undefined {
@@ -55,12 +78,21 @@ export class AuthzService {
   private readonly superAdmin: SuperAdminHook | undefined;
   private readonly resolveUserRef: ResolveUserRef;
   private readonly tenant: TenantResolver | undefined;
+  private readonly resolveTenant: (() => string | undefined) | undefined;
+  private readonly superAdminRoles: ReadonlySet<string>;
+  private readonly globalRoleGrants: Record<string, string[]> | undefined;
 
   constructor(options: AuthzServiceOptions) {
     this.store = options.store;
     this.superAdmin = options.superAdmin;
     this.resolveUserRef = options.resolveUserRef ?? defaultResolveUserRef;
     this.tenant = options.tenant;
+    this.resolveTenant =
+      options.resolveTenant === 'context'
+        ? tenantFromContext
+        : (options.resolveTenant ?? undefined);
+    this.superAdminRoles = new Set(options.superAdminRoles ?? []);
+    this.globalRoleGrants = options.globalRoleGrants;
   }
 
   /** Map a host user object to a canonical {@link UserRef} (or undefined). */
@@ -70,11 +102,47 @@ export class AuthzService {
     return normalizeUserRef(input);
   }
 
-  /** The active tenant scope, read from the configured resolver. */
+  /**
+   * The active tenant scope. Precedence: explicit `scope` arg → configured
+   * `tenant` resolver → opt-in `resolveTenant` (feature B, e.g. the Agora
+   * context). When nothing yields a tenant, returns `undefined` (global `''`).
+   */
   currentScope(scope?: TenantScope): TenantScope | undefined {
     if (scope) return scope;
-    if (!this.tenant) return undefined;
-    return normalizeTenantResolver(this.tenant());
+    if (this.tenant) {
+      const fromResolver = normalizeTenantResolver(this.tenant());
+      if (fromResolver) return fromResolver;
+    }
+    if (this.resolveTenant) {
+      const fromContext = this.resolveTenant();
+      if (fromContext) return { tenantId: fromContext };
+    }
+    return undefined;
+  }
+
+  /**
+   * Global-role bridge (feature C): the user's active global roles read
+   * structurally from the Agora context store, intersected with config. Returns
+   * `{ superAdmin, grants }` where `grants` are the unioned permissions.
+   */
+  private globalRoleVerdict(): { superAdmin: boolean; grants: string[] } {
+    if (this.superAdminRoles.size === 0 && !this.globalRoleGrants) {
+      return { superAdmin: false, grants: [] };
+    }
+    const roles = globalRolesFromContext();
+    if (roles.length === 0) return { superAdmin: false, grants: [] };
+
+    for (const role of roles) {
+      if (this.superAdminRoles.has(role)) return { superAdmin: true, grants: [] };
+    }
+    const grants: string[] = [];
+    if (this.globalRoleGrants) {
+      for (const role of roles) {
+        const perms = this.globalRoleGrants[role];
+        if (perms) grants.push(...perms);
+      }
+    }
+    return { superAdmin: false, grants };
   }
 
   /** A fresh per-request permission cache bound to the active store. */
@@ -100,6 +168,14 @@ export class AuthzService {
       if (verdict === false) return false;
     }
 
+    // Global-role bridge (feature C): super-admin global role short-circuits;
+    // otherwise its grants are unioned into the permission check.
+    const globalRoles = this.globalRoleVerdict();
+    if (globalRoles.superAdmin) return true;
+    if (globalRoles.grants.length > 0 && permissionSatisfied(globalRoles.grants, permission)) {
+      return true;
+    }
+
     const scope = this.currentScope(options.scope);
     if (options.cache) {
       return options.cache.satisfies(ref, permission, scope);
@@ -122,6 +198,8 @@ export class AuthzService {
       if (verdict === true) return true;
       if (verdict === false) return false;
     }
+
+    if (this.globalRoleVerdict().superAdmin) return true;
 
     const scope = this.currentScope(options.scope);
     const roles = await this.store.getRolesForUser(ref, scope);

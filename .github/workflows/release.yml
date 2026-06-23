@@ -1,5 +1,6 @@
 name: Release
 
+# Changesets-based publish to npm (@adonis-agora scope).
 # Manual trigger: run from the Actions tab (or `gh workflow run release.yml`).
 # - With pending changesets, opens/updates a "version packages" PR.
 # - With none, publishes any package whose version isn't on npm yet.

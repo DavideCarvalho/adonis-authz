@@ -31,6 +31,17 @@ export const { can, hasRole } = defineAuthzAbilities(service)
 
 Both deny anonymous users.
 
+<Callout type="info">
+  These are **abilities**, not policies. On `@adonisjs/bouncer` v4, *policies* are
+  auto-indexed into `.adonisjs/policies.ts` via the `indexPolicies()` init hook in
+  your app's `adonisrc.ts`. Abilities defined with `Bouncer.ability(...)` — like
+  the two above — are registered by passing them to your Bouncer instance /
+  middleware exactly as before, so `@adonis-agora/authz` requires **no**
+  `indexPolicies()` wiring. The `Bouncer.ability()` and
+  `AuthorizationResponse.allow()/deny(message, status)` API is unchanged between
+  v3 and v4.
+</Callout>
+
 ## Using them
 
 ```ts

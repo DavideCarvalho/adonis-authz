@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { type ScopeableQuery, applyScopeConstraint } from '../src/lucid_scope.js';
-import { and, eq, or, scopeAll, scopeNone, where, whereIn } from '../src/scope.js';
+import {
+  and,
+  assertSafeIdentifier,
+  eq,
+  or,
+  scopeAll,
+  scopeNone,
+  where,
+  whereIn,
+} from '../src/scope.js';
 
 /**
  * A fake {@link ScopeableQuery} that records every clause applied to it as a flat list
@@ -55,10 +64,12 @@ describe('applyScopeConstraint — constraint AST → Lucid where clauses', () =
     expect(q.ops).toEqual([]);
   });
 
-  it('deny-all → whereRaw(1 = 0) (no rows)', () => {
+  it('deny-all → grouped where(whereRaw(1 = 0)) (own clauses grouped, no rows)', () => {
     const q = new FakeQuery();
     applyScopeConstraint(q, scopeNone);
-    expect(q.ops).toEqual(['whereRaw(1 = 0)']);
+    // The deny-all is emitted inside its own `where` group so the scope's own clauses
+    // are always a single self-consistent AND-group (matching the AST path).
+    expect(q.ops).toEqual(['where(group:[whereRaw(1 = 0)])']);
   });
 
   it('a single equality → a wrapped where(field = value)', () => {
@@ -128,5 +139,26 @@ describe('applyScopeConstraint — constraint AST → Lucid where clauses', () =
   it('rejects a hostile field name (injection via identifier)', () => {
     const q = new FakeQuery();
     expect(() => applyScopeConstraint(q, eq('id"; DROP TABLE posts; --', 1))).toThrow(/unsafe/i);
+  });
+
+  it('rejects a malformed-but-not-injectable identifier as a clear thrown error', () => {
+    const q = new FakeQuery();
+    // A dotted identifier needs a real segment on each side of every dot.
+    expect(() => applyScopeConstraint(q, eq('a.', 1))).toThrow(/unsafe/i);
+    expect(() => applyScopeConstraint(q, eq('a..b', 1))).toThrow(/unsafe/i);
+  });
+});
+
+describe('assertSafeIdentifier — tightened dotted-identifier validation', () => {
+  it('accepts plain and qualified column identifiers', () => {
+    for (const ok of ['id', 'author_id', '_private', 'a1', 'posts.author_id', 'a.b.c']) {
+      expect(() => assertSafeIdentifier(ok, 'scope field')).not.toThrow();
+    }
+  });
+
+  it('rejects malformed dotted identifiers (empty/missing segment)', () => {
+    for (const bad of ['a.', '.a', 'a..b', '.', 'a.b.', '1a', 'a b']) {
+      expect(() => assertSafeIdentifier(bad, 'scope field')).toThrow(/unsafe/i);
+    }
   });
 });

@@ -1,7 +1,7 @@
 import type { Database } from '@adonisjs/lucid/database';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AuthzService } from '../src/authz_service.js';
-import { type ScopeableQuery, accessibleBy } from '../src/lucid_scope.js';
+import { type ScopeableQuery, accessibleBy, applyScopeConstraint } from '../src/lucid_scope.js';
 import { ScopeRegistry, and, eq } from '../src/scope.js';
 import { LucidPermissionStore } from '../src/stores/lucid.js';
 import { asLucidDatabase, makeMemoryDatabase } from './lucid_helpers.js';
@@ -124,5 +124,67 @@ describe('accessibleBy — Lucid query-scope (integration)', () => {
     const q = await accessibleBy(base, service, { id: '7' }, 'posts');
     // author_id = 7 AND tenant_id = globex → id 2.
     expect(await idsOf(q as never)).toEqual([2]);
+  });
+
+  // The documented contract: the query must have NO top-level `orWhere`, because `AND`
+  // binds tighter than `OR` and the scope is appended with `AND`. These tests exercise
+  // the two SAFE patterns around a caller OR (wrapped OR; or scope-first) and assert the
+  // scope still applies correctly — fail-closed for deny-all, ownership for a filter.
+  describe('safe composition with a caller-side OR (documented contract)', () => {
+    it('SAFE (wrapped OR): deny-all still fails closed — no rows', async () => {
+      const service = new AuthzService({ store, scopes: ownershipScopes() });
+      // Caller OR is wrapped in its own group, so the top level stays OR-free.
+      const base = postsQuery(db).where((q) => {
+        const sub = q as ScopeableQuery;
+        sub.where('id', '=', 1).orWhere((o) => {
+          (o as ScopeableQuery).where('id', '=', 2);
+        });
+      });
+      // `comments` is unregistered → deny-all. Grouped scope ANDs with the whole OR.
+      const q = await accessibleBy(base as never, service, { id: '7' }, 'comments');
+      expect(await idsOf(q as never)).toEqual([]);
+    });
+
+    it('SAFE (wrapped OR): ownership applies across both OR branches', async () => {
+      const service = new AuthzService({ store, scopes: ownershipScopes() });
+      // id ∈ {1, 3}, with the OR wrapped so the scope ANDs with the whole group.
+      const base = postsQuery(db).where((q) => {
+        const sub = q as ScopeableQuery;
+        sub.where('id', '=', 1).orWhere((o) => {
+          (o as ScopeableQuery).where('id', '=', 3);
+        });
+      });
+      const q = await accessibleBy(base as never, service, { id: '7' }, 'posts');
+      // (id=1 OR id=3) AND author_id=7 → only id 1 (post 3 is authored by 99).
+      expect(await idsOf(q as never)).toEqual([1]);
+    });
+
+    // `accessibleBy` is async and the Lucid builder is thenable, so `await accessibleBy(…)`
+    // already executes the query. To demonstrate the scope-FIRST pattern (apply the scope,
+    // then add only ANDed filters) we resolve the constraint and use the sync primitive
+    // `applyScopeConstraint`, which never executes — then add clauses and run once.
+    it('SAFE (scope-first): deny-all then an ANDed OR group stays fail-closed', async () => {
+      const service = new AuthzService({ store, scopes: ownershipScopes() });
+      const constraint = await service.scope({ id: '7' }, 'comments'); // unknown → deny-all
+      const q = applyScopeConstraint(postsQuery(db), constraint);
+      // Add a wrapped OR AFTER the scope — ANDed with the (1=0) group, so still no rows.
+      (q as ScopeableQuery).where((inner) => {
+        const sub = inner as ScopeableQuery;
+        sub.where('id', '=', 1).orWhere((o) => {
+          (o as ScopeableQuery).where('id', '=', 2);
+        });
+      });
+      expect(await idsOf(q as never)).toEqual([]);
+    });
+
+    it('SAFE (scope-first): ownership then an ANDed filter narrows correctly', async () => {
+      const service = new AuthzService({ store, scopes: ownershipScopes() });
+      const constraint = await service.scope({ id: '7' }, 'posts'); // ownership: author_id=7
+      const q = applyScopeConstraint(postsQuery(db), constraint);
+      // ANDed extra filter after the scope — safe because it adds no top-level OR.
+      (q as ScopeableQuery).where('tenant_id', '=', 'acme');
+      // author_id=7 AND tenant_id=acme → id 1.
+      expect(await idsOf(q as never)).toEqual([1]);
+    });
   });
 });

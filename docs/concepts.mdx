@@ -83,3 +83,42 @@ Visibility rules:
 
 Wire the active tenant once via the `tenant` resolver in config and every check
 becomes tenant-aware automatically.
+
+## Query scopes (`accessibleBy`)
+
+Where `can` decides yes/no for a **single** resource, a query scope filters a
+**collection** to the rows a user may access — applied at the DB layer instead of
+over-fetch-then-filter (the Pundit `policy_scope` / Cerbos query-plan concept).
+Import the helpers from the `@adonis-agora/authz/scope` subpath.
+
+```ts
+import { accessibleBy } from '@adonis-agora/authz/scope'
+
+const posts = await accessibleBy(Post.query(), authz, user, Post)
+// super-admin: every post; non-privileged: ownership/tenant WHERE injected;
+// unknown resource: no rows (fail-closed).
+```
+
+<Callout type="warn">
+  **The query you pass MUST NOT have a top-level `orWhere`.** The scope is appended
+  with `AND`, and in SQL `AND` binds tighter than `OR`, so an `AND (scope)` glued onto
+  a top-level `OR` only constrains the **last** branch — leaking rows, even past a
+  deny-all (`1 = 0`). The helper cannot retroactively re-group clauses the caller
+  already added.
+</Callout>
+
+Two safe patterns keep the top level free of `orWhere`:
+
+```ts
+// SAFE — apply the scope FIRST, then add only AND-ed filters:
+const q = await accessibleBy(Post.query(), authz, user, Post)
+q.where('published', true) // ANDed: fine
+
+// SAFE — wrap any caller-side OR inside its own group:
+const base = Post.query().where((q) => q.where('id', 1).orWhere('id', 2))
+await accessibleBy(base, authz, user, Post) // → (id = 1 OR id = 2) AND (scope)
+
+// UNSAFE — top-level OR; the scope binds only to the last branch and leaks:
+const bad = Post.query().where('id', 1).orWhere('id', 2)
+await accessibleBy(bad, authz, user, Post) // → id = 1 OR (id = 2 AND scope)  ✗
+```

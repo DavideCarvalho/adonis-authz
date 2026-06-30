@@ -117,12 +117,22 @@ function applyNode(query: ScopeableQuery, node: ScopeNode): void {
 }
 
 /**
- * Apply an already-resolved {@link ScopeConstraint} to a Lucid query builder, wrapped in
- * a single nested `where` group so it never interferes with other clauses on the query.
+ * Apply an already-resolved {@link ScopeConstraint} to a Lucid query builder. Both the
+ * deny-all predicate and the compiled condition tree are emitted INSIDE a single nested
+ * `where((sub) => …)` group, so the scope is internally self-consistent and joins the
+ * query with a single top-level `AND`.
  *
  * - `allow-all` → adds nothing (every row stays visible);
- * - `deny-all` → adds `WHERE 1 = 0` (the query returns no rows);
- * - otherwise → the compiled, parameterized condition tree.
+ * - `deny-all` → adds `WHERE (1 = 0)` (the query returns no rows);
+ * - otherwise → the compiled, parameterized condition tree (grouped).
+ *
+ * ⚠️ **The query MUST NOT already have a top-level `orWhere`.** Because SQL `AND` binds
+ * tighter than `OR`, an injected `AND (scope)` attaches only to the LAST `OR` branch —
+ * so a deny-all (`1 = 0`) on `where(a).orWhere(b)` compiles to `where a or b and (1 = 0)`
+ * and still returns the `a` rows (a leak). Knex cannot retroactively re-group clauses
+ * the caller already added, so this helper cannot fix it. Apply the scope FIRST (before
+ * adding your own filters), or wrap any caller-side OR inside its own
+ * `.where((q) => q.orWhere(…))` group. See {@link accessibleBy} for the full contract.
  *
  * Returns the same builder for chaining. Prefer {@link accessibleBy} for the common
  * case (resolve + apply in one call); use this when you already hold a constraint.
@@ -133,10 +143,12 @@ export function applyScopeConstraint<Q extends ScopeableQuery>(
 ): Q {
   if (constraint.kind === 'all') return query;
   if (constraint.kind === 'none') {
-    query.whereRaw('1 = 0');
+    // Group the deny-all too, so the scope's own clauses are always a single AND-group
+    // (self-consistent), matching the grouped AST path below.
+    query.where((sub) => sub.whereRaw('1 = 0'));
     return query;
   }
-  // Wrap the whole scope in one group so it ANDs with any pre-existing `where`s.
+  // Wrap the whole scope in one group so it ANDs with any pre-existing top-level `where`s.
   query.where((sub) => applyNode(sub, constraint));
   return query;
 }
@@ -163,8 +175,25 @@ export interface AccessibleByOptions {
  * // unknown resource: no rows (fail-closed).
  * ```
  *
- * Compose freely with other clauses — the scope is wrapped in its own `where` group:
- * `accessibleBy(Post.query().where('published', true), service, user, Post)`.
+ * ⚠️ **Contract — the query MUST NOT have a top-level `orWhere`.** The scope is appended
+ * with `AND`, and SQL `AND` binds tighter than `OR`, so an `AND (scope)` glued onto a
+ * top-level `OR` only constrains the LAST branch — leaking rows, including past a
+ * deny-all (`1 = 0`). This helper cannot retroactively re-group clauses the caller
+ * already added. Two safe patterns:
+ *
+ * ```ts
+ * // SAFE — apply the scope FIRST, then add only AND-ed filters:
+ * const q = await accessibleBy(Post.query(), service, user, Post)
+ * q.where('published', true) // ANDed: fine
+ *
+ * // SAFE — wrap any caller-side OR inside its own group, keeping the top level OR-free:
+ * const base = Post.query().where((q) => q.where('id', 1).orWhere('id', 2))
+ * await accessibleBy(base, service, user, Post) // → (id=1 or id=2) AND (scope)
+ *
+ * // UNSAFE — top-level OR; the scope only binds to the last branch and leaks:
+ * const bad = Post.query().where('id', 1).orWhere('id', 2)
+ * await accessibleBy(bad, service, user, Post) // → id=1 OR (id=2 AND scope)  ✗
+ * ```
  */
 export async function accessibleBy<Q extends ScopeableQuery>(
   query: Q,

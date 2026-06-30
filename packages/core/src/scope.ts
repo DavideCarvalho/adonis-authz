@@ -4,19 +4,27 @@ import type { TenantScope, UserRef } from './user_ref.js';
  * Conservative identifier allowlist for any column name interpolated into a query
  * by the Lucid adapter — policy-supplied scope `field`s. Values are always bound,
  * never concatenated; only identifiers are validated against this.
+ *
+ * The identifier is one or more dot-separated segments (`column` or
+ * `table.column`), where EACH segment must be a real identifier
+ * (`[A-Za-z_][A-Za-z0-9_]*`). This rejects malformed-but-not-injectable inputs
+ * like `a.`, `.a`, or `a..b` (empty/missing segments) up front rather than letting
+ * them through as broken SQL.
  */
-export const SAFE_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_.]*$/;
+export const SAFE_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/;
 
 /**
  * Validate a column identifier against {@link SAFE_IDENTIFIER}, throwing on anything
- * containing quotes, whitespace, or other unsafe characters. A leading-qualified
- * `table.column` is allowed (a single dot segment), so a scope can target a joined
- * column. Single source of the injection guard for the scope adapter.
+ * containing quotes, whitespace, or other unsafe characters. A qualified
+ * `table.column` is allowed (dot-separated segments), so a scope can target a joined
+ * column — but every segment must be a non-empty identifier, so a trailing/leading or
+ * doubled dot (`a.`, `.a`, `a..b`) is rejected. Single source of the injection guard
+ * for the scope adapter.
  */
 export function assertSafeIdentifier(value: string, what: string): void {
   if (!SAFE_IDENTIFIER.test(value)) {
     throw new Error(
-      `@adonis-agora/authz: unsafe ${what}: ${JSON.stringify(value)}. Identifiers must match /^[A-Za-z_][A-Za-z0-9_.]*$/ (letters, digits, underscore, dot; not starting with a digit). This blocks injection via configured names.`,
+      `@adonis-agora/authz: unsafe ${what}: ${JSON.stringify(value)}. Identifiers must match /^[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*$/ (dot-separated segments of letters, digits, underscore; each segment non-empty and not starting with a digit). This blocks injection via configured names.`,
     );
   }
 }

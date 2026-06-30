@@ -1,5 +1,11 @@
 # @adonis-agora/authz
 
+## 0.4.2
+
+### Patch Changes
+
+- [`0354acc`](https://github.com/DavideCarvalho/adonis-authz/commit/0354acc724ffcc5e0e1767247dfd42b2e78863e4) - fix: sync VERSION literal via sync-version guard
+
 ## 0.4.1
 
 ### Patch Changes

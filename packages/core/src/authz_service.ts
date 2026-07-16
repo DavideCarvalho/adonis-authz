@@ -57,11 +57,17 @@ export interface AuthzServiceOptions {
    */
   superAdminRoles?: string[];
   /**
-   * Opt-in global-role bridge (feature C). Map of global role name →
-   * permissions/wildcards that role grants. Unioned into permission checks at
-   * check time for the user's active global roles. No DB seeding.
+   * Resolve as roles do app para um usuário — a fonte que NÃO está no token nem no store authz
+   * (tipicamente uma tabela do domínio, ex. `user_roles`). As roles retornadas entram na união do
+   * `can()`/`hasRole()`/`scope()` e são mapeadas por {@link roleGrants}, exatamente como as roles
+   * globais do contexto. Opcional: ausente → só token + store decidem.
    */
-  globalRoleGrants?: Record<string, string[]>;
+  resolveRoles?: (user: UserRef, scope?: TenantScope) => Promise<string[]> | string[];
+  /**
+   * Mapa role → permissões/wildcards, aplicado às roles EFETIVAS (contexto + resolver) sem seed no
+   * store. (Antes: `globalRoleGrants`; renomeado porque não é só das roles globais.)
+   */
+  roleGrants?: Record<string, string[]>;
   /**
    * Query-scope registry (feature E). Pre-built {@link ScopeRegistry} mapping each
    * resource to a scope filter for {@link AuthzService.scope} / the Lucid
@@ -95,7 +101,10 @@ export class AuthzService {
   private readonly tenant: TenantResolver | undefined;
   private readonly resolveTenant: (() => string | undefined) | undefined;
   private readonly superAdminRoles: ReadonlySet<string>;
-  private readonly globalRoleGrants: Record<string, string[]> | undefined;
+  private readonly roleGrants: Record<string, string[]> | undefined;
+  private readonly resolveRolesFn:
+    | ((user: UserRef, scope?: TenantScope) => Promise<string[]> | string[])
+    | undefined;
 
   /** The query-scope registry (resource → scope filter). See {@link scope}. */
   readonly scopes: ScopeRegistry;
@@ -107,7 +116,8 @@ export class AuthzService {
     this.tenant = options.tenant;
     this.resolveTenant = options.resolveTenant;
     this.superAdminRoles = new Set(options.superAdminRoles ?? []);
-    this.globalRoleGrants = options.globalRoleGrants;
+    this.roleGrants = options.roleGrants;
+    this.resolveRolesFn = options.resolveRoles;
     this.scopes = options.scopes ?? new ScopeRegistry();
   }
 
@@ -171,17 +181,52 @@ export class AuthzService {
   }
 
   /**
-   * Global-role bridge (feature C): the permissions/wildcards granted by the
-   * user's active global roles, unioned into the permission check in {@link can}.
-   * Roles ≠ permissions, so role checks never consult these.
+   * The effective roles for an ALREADY-RESOLVED ref: the global roles from the
+   * context (token) ∪ the app's roles (the {@link resolveRoles} seam) ∪ the
+   * store's roles. Private — {@link can}, {@link scope} and {@link hasRole}
+   * already hold a resolved `ref` and call this directly, so they never run
+   * `refOf` twice. The public {@link effectiveRoles}/{@link effectivePermissions}
+   * (consumed by `buildAuthzShare` in authz-react, which only has the host
+   * user object) resolve `ref` once and delegate here.
    */
-  private globalPermissionGrants(): string[] {
-    if (!this.globalRoleGrants) return [];
-    const roles = globalRolesFromContext();
-    if (roles.length === 0) return [];
+  async #effectiveRolesFor(ref: UserRef, tenant?: TenantScope): Promise<string[]> {
+    const contextRoles = globalRolesFromContext();
+    const appRoles = this.resolveRolesFn ? await this.resolveRolesFn(ref, tenant) : [];
+    const storeRoles = await this.store.getRolesForUser(ref, tenant);
+    return [...new Set([...contextRoles, ...appRoles, ...storeRoles])];
+  }
+
+  /**
+   * As roles efetivas do usuário para decisão: as globais do contexto (token) unidas às do app
+   * (o seam `resolveRoles`) e às do STORE. Público: o `buildAuthzShare` do authz-react o usa para o
+   * gating de UI casar com a decisão de servidor.
+   */
+  async effectiveRoles(user: unknown, scope?: TenantScope): Promise<string[]> {
+    const ref = this.refOf(user);
+    if (!ref) return [];
+    const tenant = this.currentScope(scope);
+    return this.#effectiveRolesFor(ref, tenant);
+  }
+
+  /**
+   * Todas as permissões efetivas do usuário: as do store unidas às concedidas por `roleGrants` sobre
+   * as roles efetivas. Público — a fonte da verdade que `can()` e o `buildAuthzShare` compartilham.
+   */
+  async effectivePermissions(user: unknown, scope?: TenantScope): Promise<string[]> {
+    const ref = this.refOf(user);
+    if (!ref) return [];
+    const tenant = this.currentScope(scope);
+    const granted = await this.store.getPermissionsForUser(ref, tenant);
+    const roles = await this.#effectiveRolesFor(ref, tenant);
+    return [...new Set([...granted, ...this.rolePermissionGrants(roles)])];
+  }
+
+  /** As permissões concedidas por um conjunto de roles via {@link roleGrants} (sem seed no store). */
+  private rolePermissionGrants(roles: readonly string[]): string[] {
+    if (!this.roleGrants) return [];
     const grants: string[] = [];
     for (const role of roles) {
-      const perms = this.globalRoleGrants[role];
+      const perms = this.roleGrants[role];
       if (perms) grants.push(...perms);
     }
     return grants;
@@ -208,11 +253,13 @@ export class AuthzService {
     if (superAdmin !== undefined) return superAdmin;
 
     const scope = this.currentScope(options.scope);
-    // Single permission-union site: store grants ∪ global-role grants (feature C).
+    // Single permission-union site: store grants ∪ roleGrants over the effective roles
+    // (context ∪ resolveRoles ∪ store — feature C generalized by the resolveRoles seam).
+    const roles = await this.#effectiveRolesFor(ref, scope);
     const granted = options.cache
       ? await options.cache.getPermissions(ref, scope)
       : await this.store.getPermissionsForUser(ref, scope);
-    return permissionSatisfied([...granted, ...this.globalPermissionGrants()], permission);
+    return permissionSatisfied([...granted, ...this.rolePermissionGrants(roles)], permission);
   }
 
   /**
@@ -252,20 +299,28 @@ export class AuthzService {
     const granted = options.cache
       ? await options.cache.getPermissions(ref, tenant)
       : await this.store.getPermissionsForUser(ref, tenant);
-    const permissions = [...granted, ...this.globalPermissionGrants()];
+    const effective = await this.#effectiveRolesFor(ref, tenant);
+    const permissions = [...granted, ...this.rolePermissionGrants(effective)];
 
     // 2. A wildcard permission grant for the scope action → allow-all.
     if (permissionSatisfied(permissions, action)) return scopeAll;
 
-    // 3. The resource's registered scope filter.
+    // 3. The resource's registered scope filter, fed the user's effective roles
+    // (context ∪ resolveRoles ∪ store — #effectiveRolesFor already includes store roles).
     const filter = this.scopes.resolve(resource);
     if (!filter) return scopeNone; // fail-closed: unknown resource sees no rows.
 
-    const roles = await this.store.getRolesForUser(ref, tenant);
-    return normalizeScope(await filter({ user: ref, action, permissions, roles, tenant }));
+    return normalizeScope(
+      await filter({ user: ref, action, permissions, roles: effective, tenant }),
+    );
   }
 
-  /** Does the user have the named role (exact match, tenant-aware)? */
+  /**
+   * Does the user have the named role (exact match, tenant-aware)? Checks the
+   * EFFECTIVE roles — context (token) ∪ app (`resolveRoles`) ∪ store — so a role
+   * asserted by the token or the app's resolver is recognized exactly like a
+   * store-assigned one.
+   */
   async hasRole(
     user: unknown,
     role: string,
@@ -278,11 +333,15 @@ export class AuthzService {
     if (superAdmin !== undefined) return superAdmin;
 
     const scope = this.currentScope(options.scope);
-    const roles = await this.store.getRolesForUser(ref, scope);
+    const roles = await this.#effectiveRolesFor(ref, scope);
     return roles.includes(role);
   }
 
-  /** Does the user have ANY of the named roles? */
+  /**
+   * Does the user have ANY of the named roles? Checks the same EFFECTIVE roles
+   * as {@link hasRole} — context (token) ∪ app (`resolveRoles`) ∪ store — so
+   * `hasAnyRole` never disagrees with `hasRole` for the same input.
+   */
   async hasAnyRole(
     user: unknown,
     roles: string[],
@@ -295,7 +354,7 @@ export class AuthzService {
     if (superAdmin !== undefined) return superAdmin;
 
     const scope = this.currentScope(options.scope);
-    const owned = new Set(await this.store.getRolesForUser(ref, scope));
+    const owned = new Set(await this.#effectiveRolesFor(ref, scope));
     return roles.some((r) => owned.has(r));
   }
 }

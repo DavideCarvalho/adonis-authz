@@ -1,0 +1,58 @@
+{
+  "name": "@adonis-agora/authz-react",
+  "version": "0.0.0",
+  "description": "React/Inertia bindings for @adonis-agora/authz: AuthzProvider, useAuthz, useCan, <Can>, and a server-side buildAuthzShare() for the Inertia share.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DavideCarvalho/adonis-authz.git",
+    "directory": "packages/react"
+  },
+  "author": "Davi Carvalho <davi@goflip.ai>",
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js",
+      "default": "./dist/src/index.js"
+    },
+    "./server": {
+      "types": "./dist/src/share.d.ts",
+      "import": "./dist/src/share.js",
+      "default": "./dist/src/share.js"
+    }
+  },
+  "files": ["dist/", "README.md", "CHANGELOG.md"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "peerDependencies": {
+    "@adonis-agora/authz": "^0.6.0",
+    "@inertiajs/react": "^3.3.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
+  },
+  "devDependencies": {
+    "@adonis-agora/authz": "workspace:*",
+    "@inertiajs/react": "^3.3.0",
+    "@testing-library/react": "^16.0.0",
+    "@types/node": "^20.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^25.0.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "typescript": "^5.4.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20.6.0"
+  },
+  "keywords": ["adonisjs", "adonis", "inertia", "react", "authorization", "authz", "rbac", "agora"]
+}

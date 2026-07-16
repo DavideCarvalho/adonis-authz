@@ -1,50 +1,25 @@
 import { randomUUID } from 'node:crypto';
 import type { PermissionStore } from '../store.js';
 import { GLOBAL_TENANT, type TenantScope, type UserRef, normalizeTenant } from '../user_ref.js';
+import {
+  AUTHZ_TABLES,
+  type AuthzTableNames,
+  type LucidDatabase,
+  assertSafeIdentifier,
+  createAuthzTables,
+  detectDialect,
+  isMysql,
+} from './lucid-schema.js';
 
-/**
- * The slice of a Lucid query client this store relies on. Both the root
- * `Database` instance and a connection client satisfy it, so we depend on the
- * surface rather than a concrete Lucid type — keeping the optional-peer coupling
- * minimal.
- */
-export interface LucidQueryClient {
-  rawQuery(sql: string, bindings?: readonly unknown[]): Promise<unknown>;
-}
-
-/** A Lucid `Database` / connection client, plus optional dialect detection. */
-export interface LucidDatabase extends LucidQueryClient {
-  connection?(name?: string): { dialect?: { name?: string } };
-}
-
-/** Table-name overrides (defaults match the published migration). */
-export interface AuthzTableNames {
-  roles?: string;
-  permissions?: string;
-  rolePermission?: string;
-  userRole?: string;
-  userPermission?: string;
-}
-
-const DEFAULT_TABLES: Required<AuthzTableNames> = {
-  roles: 'authz_roles',
-  permissions: 'authz_permissions',
-  rolePermission: 'authz_role_permission',
-  userRole: 'authz_user_role',
-  userPermission: 'authz_user_permission',
-};
+// Re-exported for backward compatibility: these types originated here before the
+// schema was extracted into `lucid-schema.ts`. Consumers (and `factory.ts`) import
+// them from `./lucid.js`.
+export type { AuthzTableNames, LucidDatabase, LucidQueryClient } from './lucid-schema.js';
 
 export interface LucidPermissionStoreOptions {
   tables?: AuthzTableNames;
   /** Run `CREATE TABLE IF NOT EXISTS` on first use (default true). Set false when using migrations. */
   autoCreateSchema?: boolean;
-}
-
-const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
-function assertSafeIdentifier(id: string): string {
-  if (!IDENT.test(id))
-    throw new Error(`@adonis-agora/authz: unsafe SQL identifier: ${JSON.stringify(id)}`);
-  return id;
 }
 
 function toRows(result: unknown): Record<string, unknown>[] {
@@ -54,14 +29,6 @@ function toRows(result: unknown): Record<string, unknown>[] {
     return Array.isArray(rows) ? (rows as Record<string, unknown>[]) : [];
   }
   return [];
-}
-
-function isPostgres(dialect: string | undefined): boolean {
-  return !!dialect && /postgres|pg|redshift/i.test(dialect);
-}
-
-function isMysql(dialect: string | undefined): boolean {
-  return !!dialect && /mysql|mariadb/i.test(dialect);
 }
 
 /**
@@ -80,14 +47,10 @@ export class LucidPermissionStore implements PermissionStore {
     private readonly db: LucidDatabase,
     options: LucidPermissionStoreOptions = {},
   ) {
-    this.t = { ...DEFAULT_TABLES, ...options.tables };
+    this.t = { ...AUTHZ_TABLES, ...options.tables };
     for (const name of Object.values(this.t)) assertSafeIdentifier(name);
     this.autoCreate = options.autoCreateSchema !== false;
-    try {
-      this.dialect = db.connection?.()?.dialect?.name;
-    } catch {
-      this.dialect = undefined;
-    }
+    this.dialect = detectDialect(db);
   }
 
   private async ready(): Promise<void> {
@@ -116,66 +79,12 @@ export class LucidPermissionStore implements PermissionStore {
     return `INSERT INTO ${table} (${cols}) VALUES (${placeholders}) ON CONFLICT DO NOTHING`;
   }
 
+  /**
+   * Create the RBAC tables. Delegates to the standalone {@link createAuthzTables}
+   * so the auto-create path and a migration-based one run identical DDL.
+   */
   async ensureSchema(): Promise<void> {
-    const pg = isPostgres(this.dialect);
-    const ts = pg ? 'TIMESTAMP' : 'DATETIME';
-
-    await this.run(
-      `CREATE TABLE IF NOT EXISTS ${this.t.roles} (
-        id VARCHAR(191) PRIMARY KEY,
-        name VARCHAR(191) NOT NULL,
-        guard VARCHAR(191),
-        created_at ${ts}
-      )`,
-    );
-    await this.run(
-      `CREATE UNIQUE INDEX IF NOT EXISTS ${this.t.roles}_name_uq ON ${this.t.roles} (name)`,
-    );
-
-    await this.run(
-      `CREATE TABLE IF NOT EXISTS ${this.t.permissions} (
-        id VARCHAR(191) PRIMARY KEY,
-        name VARCHAR(191) NOT NULL,
-        guard VARCHAR(191),
-        created_at ${ts}
-      )`,
-    );
-    await this.run(
-      `CREATE UNIQUE INDEX IF NOT EXISTS ${this.t.permissions}_name_uq ON ${this.t.permissions} (name)`,
-    );
-
-    await this.run(
-      `CREATE TABLE IF NOT EXISTS ${this.t.rolePermission} (
-        role_id VARCHAR(191) NOT NULL,
-        permission_id VARCHAR(191) NOT NULL,
-        PRIMARY KEY (role_id, permission_id)
-      )`,
-    );
-
-    await this.run(
-      `CREATE TABLE IF NOT EXISTS ${this.t.userRole} (
-        user_type VARCHAR(191) NOT NULL,
-        user_id VARCHAR(191) NOT NULL,
-        role_id VARCHAR(191) NOT NULL,
-        tenant_id VARCHAR(191) NOT NULL DEFAULT '',
-        PRIMARY KEY (user_type, user_id, role_id, tenant_id)
-      )`,
-    );
-    await this.run(
-      `CREATE INDEX IF NOT EXISTS ${this.t.userRole}_user_idx ON ${this.t.userRole} (user_type, user_id)`,
-    );
-
-    await this.run(
-      `CREATE TABLE IF NOT EXISTS ${this.t.userPermission} (
-        user_type VARCHAR(191) NOT NULL,
-        user_id VARCHAR(191) NOT NULL,
-        permission_id VARCHAR(191) NOT NULL,
-        PRIMARY KEY (user_type, user_id, permission_id)
-      )`,
-    );
-    await this.run(
-      `CREATE INDEX IF NOT EXISTS ${this.t.userPermission}_user_idx ON ${this.t.userPermission} (user_type, user_id)`,
-    );
+    await createAuthzTables(this.db, { tables: this.t });
   }
 
   private async findRoleId(name: string): Promise<string | undefined> {

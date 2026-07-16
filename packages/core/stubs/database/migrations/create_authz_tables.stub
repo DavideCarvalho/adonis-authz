@@ -2,58 +2,28 @@
   exports({ to: app.migrationsPath(`${new Date().getTime()}_create_authz_tables.ts`) })
 }}}
 import { BaseSchema } from '@adonisjs/lucid/schema'
+import { createAuthzTables, dropAuthzTables } from '@adonis-agora/authz'
 
 /**
  * RBAC tables for @adonis-agora/authz. This package NEVER owns a users table — users
  * are referenced polymorphically by `(user_type, user_id)`. `tenant_id` is part
  * of the user-role PK ('' = the global scope) so the same (user, role) can be
  * granted per-tenant independently.
+ *
+ * The DDL lives in the lib (`createAuthzTables`/`dropAuthzTables`) — the SAME code the
+ * store runs when `autoCreateSchema` is on — so this migration can never drift from it.
+ * Set `autoCreateSchema: false` in `config/authz.ts` when you run this migration.
  */
 export default class extends BaseSchema {
   async up() {
-    this.schema.createTable('authz_roles', (table) => {
-      table.string('id', 191).primary()
-      table.string('name', 191).notNullable().unique()
-      table.string('guard', 191).nullable()
-      table.timestamp('created_at')
-    })
-
-    this.schema.createTable('authz_permissions', (table) => {
-      table.string('id', 191).primary()
-      table.string('name', 191).notNullable().unique()
-      table.string('guard', 191).nullable()
-      table.timestamp('created_at')
-    })
-
-    this.schema.createTable('authz_role_permission', (table) => {
-      table.string('role_id', 191).notNullable()
-      table.string('permission_id', 191).notNullable()
-      table.primary(['role_id', 'permission_id'])
-    })
-
-    this.schema.createTable('authz_user_role', (table) => {
-      table.string('user_type', 191).notNullable()
-      table.string('user_id', 191).notNullable()
-      table.string('role_id', 191).notNullable()
-      table.string('tenant_id', 191).notNullable().defaultTo('')
-      table.primary(['user_type', 'user_id', 'role_id', 'tenant_id'])
-      table.index(['user_type', 'user_id'], 'authz_user_role_user_idx')
-    })
-
-    this.schema.createTable('authz_user_permission', (table) => {
-      table.string('user_type', 191).notNullable()
-      table.string('user_id', 191).notNullable()
-      table.string('permission_id', 191).notNullable()
-      table.primary(['user_type', 'user_id', 'permission_id'])
-      table.index(['user_type', 'user_id'], 'authz_user_permission_user_idx')
+    this.defer(async (db) => {
+      await createAuthzTables(db)
     })
   }
 
   async down() {
-    this.schema.dropTable('authz_user_permission')
-    this.schema.dropTable('authz_user_role')
-    this.schema.dropTable('authz_role_permission')
-    this.schema.dropTable('authz_permissions')
-    this.schema.dropTable('authz_roles')
+    this.defer(async (db) => {
+      await dropAuthzTables(db)
+    })
   }
 }

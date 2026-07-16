@@ -24,6 +24,13 @@ export type {
 export type { PermissionStore } from './store.js';
 export { MemoryPermissionStore } from './stores/memory.js';
 export { LucidPermissionStore } from './stores/lucid.js';
+// Standalone Lucid schema helpers — for apps that set `autoCreateSchema: false` and
+// create the RBAC tables from a Lucid migration (mirrors `@adonis-agora/durable`).
+export {
+  AUTHZ_TABLES,
+  createAuthzTables,
+  dropAuthzTables,
+} from './stores/lucid-schema.js';
 export type {
   AuthzTableNames,
   LucidDatabase,

@@ -87,8 +87,11 @@ describe('feature C — global-role bridge', () => {
     expect(await service.hasRole(user, 'auditor')).toBe(true);
     // ...but the granted PERMISSION string is never treated as a role name.
     expect(await service.hasRole(user, 'audit.*')).toBe(false);
-    // hasAnyRole is store-only (unaffected by context/resolver roles) — see NOTES.
-    expect(await service.hasAnyRole(user, ['auditor', 'audit.read'])).toBe(false);
+    // hasAnyRole checks the SAME effective-role union as hasRole (context ∪ resolveRoles ∪
+    // store), so it recognizes the context role 'auditor' — but 'audit.read' is a permission,
+    // never a role, so it contributes nothing here.
+    expect(await service.hasAnyRole(user, ['auditor', 'audit.read'])).toBe(true);
+    expect(await service.hasAnyRole(user, ['audit.read'])).toBe(false);
   });
 
   it('roleGrants are unioned into the permission check', async () => {

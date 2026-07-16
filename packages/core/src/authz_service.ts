@@ -337,7 +337,11 @@ export class AuthzService {
     return roles.includes(role);
   }
 
-  /** Does the user have ANY of the named roles? */
+  /**
+   * Does the user have ANY of the named roles? Checks the same EFFECTIVE roles
+   * as {@link hasRole} — context (token) ∪ app (`resolveRoles`) ∪ store — so
+   * `hasAnyRole` never disagrees with `hasRole` for the same input.
+   */
   async hasAnyRole(
     user: unknown,
     roles: string[],
@@ -350,7 +354,7 @@ export class AuthzService {
     if (superAdmin !== undefined) return superAdmin;
 
     const scope = this.currentScope(options.scope);
-    const owned = new Set(await this.store.getRolesForUser(ref, scope));
+    const owned = new Set(await this.#effectiveRolesFor(ref, scope));
     return roles.some((r) => owned.has(r));
   }
 }

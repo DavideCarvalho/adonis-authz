@@ -60,4 +60,4 @@ jobs:
           # usa o token e nunca troca o id-token por credencial. Vazio, o npm ve que nao ha
           # auth e cai no trusted publishing. O secret NPM_TOKEN segue existindo; basta
           # devolver `${{ secrets.NPM_TOKEN }}` aqui pra reverter pro token.
-          NODE_AUTH_TOKEN: '${{ secrets.NPM_TOKEN }}'
+          NODE_AUTH_TOKEN: ''

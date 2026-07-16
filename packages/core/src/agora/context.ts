@@ -13,15 +13,17 @@ export const AGORA_CONTEXT_ACCESSOR = Symbol.for('@agora/context:accessor');
 
 /**
  * The shape we read from the accessor slot. Deliberately minimal and tolerant:
- * fields are optional and `get()` returns the per-key value store written by
- * upstream libraries (e.g. authkit writes `globalRoles`).
+ * fields are optional. `get()` (no argument) returns the whole active store — the
+ * one form every `@adonis-agora/context` version has always implemented, so we
+ * read it and index the key ourselves rather than trusting `get(key)`, which only
+ * newer context versions honour.
  */
 export interface AgoraContextAccessor {
   traceId?: string;
   tenantId?: string;
   userRef?: { type?: string; id?: string | number };
-  /** Read an arbitrary context store value by key (structural). */
-  get?: (key: string) => unknown;
+  /** Read the whole active context store (structural). */
+  get?: () => unknown;
 }
 
 /** Read the active Agora context accessor from the global slot, if present. */
@@ -39,14 +41,23 @@ export function tenantFromContext(): string | undefined {
 }
 
 /**
- * Read a value from the active Agora context store (the `get()` accessor),
- * tolerant of a missing slot or accessor.
+ * Read a value from the active Agora context store, tolerant of a missing slot or
+ * accessor.
+ *
+ * We read the WHOLE store via `get()` and index the key here, instead of calling
+ * `get(key)`. The context lib's accessor historically implemented only the no-arg
+ * `get()`; a `get(key)` call on those versions ignored the argument and returned
+ * the whole store, so `readContextValue('globalRoles')` got an object, its
+ * `Array.isArray` check failed, and every global-role permission silently denied.
+ * Reading `get()` and indexing locally works against every context version.
  */
 export function readContextValue(key: string): unknown {
   const accessor = readContextAccessor();
   if (typeof accessor?.get !== 'function') return undefined;
   try {
-    return accessor.get(key);
+    const store = accessor.get();
+    if (store == null || typeof store !== 'object') return undefined;
+    return (store as Record<string, unknown>)[key];
   } catch {
     return undefined;
   }

@@ -33,9 +33,12 @@ describe('agora context bridge', () => {
     expect(tenantFromContext()).toBeUndefined();
   });
 
-  it('reads global roles via the get() store accessor', () => {
-    const store: Record<string, unknown> = { globalRoles: ['super-admin', 'auditor'] };
-    setAccessor({ get: (k: string) => store[k] });
+  // The real @adonis-agora/context accessor implements get() → the whole store, and
+  // NOTHING else. Earlier versions of these tests faked `get(key) => store[key]`,
+  // a contract the context lib never shipped — which is exactly why the bug (authz
+  // getting the whole store back and its Array.isArray failing) went unnoticed.
+  it('reads global roles from the real accessor shape (get() → whole store)', () => {
+    setAccessor({ get: () => ({ traceId: 't1', globalRoles: ['super-admin', 'auditor'] }) });
     expect(globalRolesFromContext()).toEqual(['super-admin', 'auditor']);
   });
 
@@ -49,7 +52,12 @@ describe('agora context bridge', () => {
   });
 
   it('filters non-string global roles', () => {
-    setAccessor({ get: () => ['admin', 42, null] });
+    setAccessor({ get: () => ({ globalRoles: ['admin', 42, null] }) });
     expect(globalRolesFromContext()).toEqual(['admin']);
+  });
+
+  it('returns [] when the store has no globalRoles key', () => {
+    setAccessor({ get: () => ({ traceId: 't1' }) });
+    expect(globalRolesFromContext()).toEqual([]);
   });
 });

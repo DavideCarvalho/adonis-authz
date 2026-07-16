@@ -64,7 +64,7 @@ describe('feature C — global-role bridge', () => {
     const store = new MemoryPermissionStore();
     const service = new AuthzService({ store, superAdminRoles: ['platform:super'] });
 
-    setContext({ get: () => ['platform:super'] });
+    setContext({ get: () => ({ globalRoles: ['platform:super'] }) });
     expect(await service.can(user, 'anything.at.all')).toBe(true);
     expect(await service.hasRole(user, 'whatever')).toBe(true);
     // Regression: a global super-admin must agree across hasRole and hasAnyRole.
@@ -79,7 +79,7 @@ describe('feature C — global-role bridge', () => {
       globalRoleGrants: { auditor: ['audit.*'] },
     });
 
-    setContext({ get: () => ['auditor'] });
+    setContext({ get: () => ({ globalRoles: ['auditor'] }) });
     // Permission union sees the global grant...
     expect(await service.can(user, 'audit.read')).toBe(true);
     // ...but roles ≠ permissions: a permission grant is never a role.
@@ -95,7 +95,7 @@ describe('feature C — global-role bridge', () => {
       globalRoleGrants: { auditor: ['audit.*'] },
     });
 
-    setContext({ get: () => ['auditor'] });
+    setContext({ get: () => ({ globalRoles: ['auditor'] }) });
     expect(await service.can(user, 'audit.read')).toBe(true);
     expect(await service.can(user, 'posts.edit')).toBe(false);
   });
@@ -103,7 +103,7 @@ describe('feature C — global-role bridge', () => {
   it('default (no config) ignores context global roles — behavior unchanged', async () => {
     const store = new MemoryPermissionStore();
     const service = new AuthzService({ store });
-    setContext({ get: () => ['platform:super'] });
+    setContext({ get: () => ({ globalRoles: ['platform:super'] }) });
     expect(await service.can(user, 'anything')).toBe(false);
   });
 

@@ -1,7 +1,7 @@
 import type { SuperAdminHook, TenantResolver } from './authz_service.js';
 import type { ScopeRegistry } from './scope.js';
 import { type StoreProvider, stores } from './stores/factory.js';
-import type { ResolveUserRef } from './user_ref.js';
+import type { ResolveUserRef, TenantScope, UserRef } from './user_ref.js';
 
 export interface AuthzConfig {
   /** Key of the active store in {@link AuthzConfig.stores}. */
@@ -27,10 +27,17 @@ export interface AuthzConfig {
    */
   superAdminRoles?: string[];
   /**
-   * Opt-in global-role bridge (feature C). Global role → permissions/wildcards
-   * unioned into checks for the user's active global roles. No DB seeding.
+   * Resolve as roles do app para um usuário — a fonte que NÃO está no token nem no store authz
+   * (tipicamente uma tabela do domínio, ex. `user_roles`). As roles retornadas entram na união do
+   * `can()`/`hasRole()`/`scope()` e são mapeadas por {@link roleGrants}, exatamente como as roles
+   * globais do contexto. Opcional: ausente → só token + store decidem.
    */
-  globalRoleGrants?: Record<string, string[]>;
+  resolveRoles?: (user: UserRef, scope?: TenantScope) => Promise<string[]> | string[];
+  /**
+   * Mapa role → permissões/wildcards, aplicado às roles EFETIVAS (contexto + resolver) sem seed no
+   * store. (Antes: `globalRoleGrants`; renomeado porque não é só das roles globais.)
+   */
+  roleGrants?: Record<string, string[]>;
   /**
    * Declared roles → permissions catalog, seeded by `node ace authz:sync`.
    * Permissions listed are created and attached to each role (idempotent).

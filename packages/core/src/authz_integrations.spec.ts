@@ -72,27 +72,30 @@ describe('feature C — global-role bridge', () => {
     expect(await service.hasAnyRole(user, ['a', 'b'])).toBe(true);
   });
 
-  it('globalRoleGrants affect can() only, never role checks', async () => {
+  it('roleGrants map is permission-only: the granted permission string is never a role', async () => {
     const store = new MemoryPermissionStore();
     const service = new AuthzService({
       store,
-      globalRoleGrants: { auditor: ['audit.*'] },
+      roleGrants: { auditor: ['audit.*'] },
     });
 
     setContext({ get: () => ({ globalRoles: ['auditor'] }) });
     // Permission union sees the global grant...
     expect(await service.can(user, 'audit.read')).toBe(true);
-    // ...but roles ≠ permissions: a permission grant is never a role.
-    expect(await service.hasRole(user, 'auditor')).toBe(false);
+    // ...and the context role itself IS a real effective role (hasRole reflects it directly,
+    // independent of roleGrants — see resolve-roles.spec.ts).
+    expect(await service.hasRole(user, 'auditor')).toBe(true);
+    // ...but the granted PERMISSION string is never treated as a role name.
     expect(await service.hasRole(user, 'audit.*')).toBe(false);
+    // hasAnyRole is store-only (unaffected by context/resolver roles) — see NOTES.
     expect(await service.hasAnyRole(user, ['auditor', 'audit.read'])).toBe(false);
   });
 
-  it('globalRoleGrants are unioned into the permission check', async () => {
+  it('roleGrants are unioned into the permission check', async () => {
     const store = new MemoryPermissionStore();
     const service = new AuthzService({
       store,
-      globalRoleGrants: { auditor: ['audit.*'] },
+      roleGrants: { auditor: ['audit.*'] },
     });
 
     setContext({ get: () => ({ globalRoles: ['auditor'] }) });
@@ -100,7 +103,7 @@ describe('feature C — global-role bridge', () => {
     expect(await service.can(user, 'posts.edit')).toBe(false);
   });
 
-  it('default (no config) ignores context global roles — behavior unchanged', async () => {
+  it('default (no config) ignores context global roles for permission grants — behavior unchanged', async () => {
     const store = new MemoryPermissionStore();
     const service = new AuthzService({ store });
     setContext({ get: () => ({ globalRoles: ['platform:super'] }) });
@@ -114,7 +117,7 @@ describe('feature C — global-role bridge', () => {
     const service = new AuthzService({
       store,
       superAdminRoles: ['platform:super'],
-      globalRoleGrants: { auditor: ['audit.*'] },
+      roleGrants: { auditor: ['audit.*'] },
     });
     expect(await service.can(user, 'posts.edit')).toBe(true);
     expect(await service.can(user, 'audit.read')).toBe(false);

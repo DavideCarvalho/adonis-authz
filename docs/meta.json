@@ -4,9 +4,12 @@
     "index",
     "getting-started",
     "concepts",
+    "query-scopes",
     "config",
     "bouncer-integration",
+    "middleware",
     "agora-integration",
+    "react",
     "mixin",
     "commands",
     "testing"

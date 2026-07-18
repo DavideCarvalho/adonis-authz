@@ -91,6 +91,12 @@ Where `can` decides yes/no for a **single** resource, a query scope filters a
 over-fetch-then-filter (the Pundit `policy_scope` / Cerbos query-plan concept).
 Import the helpers from the `@adonis-agora/authz/scope` subpath.
 
+<Callout type="info">
+  This is the **consumer** side. A resource is deny-all until you **register** a
+  scope filter for it — see [Query scopes](/docs/authz/query-scopes) for the
+  producer side (the `scopes` config key and the `eq`/`where`/`and`/`or` DSL).
+</Callout>
+
 ```ts
 import { accessibleBy } from '@adonis-agora/authz/scope'
 

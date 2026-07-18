@@ -1,0 +1,209 @@
+---
+title: Query scopes
+description: Register a scope filter for a resource so accessibleBy() constrains a collection to the rows a user may see — the scopes config key, ScopeRegistry.register, and the eq/where/whereIn/and/or DSL.
+icon: Filter
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+[`accessibleBy`](/docs/authz/concepts#query-scopes-accessibleby) constrains a
+Lucid query to the rows a user may access — the Pundit `policy_scope` / Cerbos
+query-plan concept. But `accessibleBy` is only the **consumer**. Until you
+**register** a scope filter for a resource, that resource is deny-all
+(fail-closed): `accessibleBy` returns no rows. This page is the **producer** side
+— how to teach authz what "accessible" means for each resource.
+
+<Callout type="warn">
+  **A resource with no registered scope sees nothing.** `AuthzService.scope`
+  resolves an unregistered resource to `deny-all`, matching how authz treats an
+  unknown permission. If `accessibleBy(Post.query(), …)` is returning zero rows
+  for everyone, you almost certainly haven't registered a scope for `Post` yet.
+</Callout>
+
+## Resolution order
+
+A registered filter is only consulted **after** the privileged short-circuits, so
+scoping stays consistent with single-resource `can()` decisions. For `scope(user, resource, { action })`:
+
+1. **Super-admin** (hook or global super-admin role) → `allow-all` (no filter).
+2. A **wildcard permission grant** for `action` (default `'viewAny'`) → `allow-all`.
+3. The resource's **registered scope filter** → its constraint, fed the user's
+   effective roles/permissions/tenant so it derives from the SAME authz data.
+4. Otherwise (anonymous, or no scope registered) → `deny-all` (fail-closed).
+
+So a scope filter only runs for a **non-privileged** user — it answers "which
+rows may this ordinary user see?", never "is this user an admin?".
+
+## The `scopes` config key
+
+Register filters via the `scopes` key in `config/authz.ts`. It accepts either a
+pre-built `ScopeRegistry`, or — more commonly — a **builder callback** that
+registers onto a fresh registry the provider creates for you:
+
+```ts title="config/authz.ts"
+import { defineConfig, stores } from '@adonis-agora/authz'
+import { eq, and, whereIn } from '@adonis-agora/authz/scope'
+import Post from '#models/post'
+import Invoice from '#models/invoice'
+
+export default defineConfig({
+  default: 'lucid',
+  stores: { lucid: stores.lucid() },
+
+  scopes: (registry) => {
+    // A user sees their own posts, plus any that are published.
+    registry.register(Post, ({ user }) =>
+      // OR: owner OR published — see the DSL below.
+      or(eq('author_id', user.id), eq('published', true)),
+    )
+
+    // Managers see every invoice in their tenant; everyone else sees their own.
+    registry.register(Invoice, ({ user, roles, tenant }) => {
+      if (roles.includes('manager')) return true // allow-all
+      return and(
+        eq('user_id', user.id),
+        ...(tenant ? [eq('tenant_id', tenant.tenantId)] : []),
+      )
+    })
+  },
+})
+```
+
+<Callout type="info">
+  Prefer the **model class** as the resource key — `register(Post, …)` matches
+  the same `Post` you pass to `accessibleBy(Post.query(), …)` by reference. A
+  **string** key (`register('post', …)`) lets a host register a scope without
+  importing the model; then call `accessibleBy(query, authz, user, 'post')`.
+</Callout>
+
+## `ScopeRegistry.register`
+
+`ScopeRegistry` is the resource → filter map. You rarely construct it yourself
+(the `scopes` builder hands you one), but the API is:
+
+```ts
+import { ScopeRegistry } from '@adonis-agora/authz/scope'
+
+const registry = new ScopeRegistry()
+
+registry
+  .register(Post, (ctx) => eq('author_id', ctx.user.id))
+  .register('comment', (ctx) => eq('author_id', ctx.user.id)) // chainable
+
+registry.has(Post)        // true
+registry.resolve(Post)    // the filter, or undefined
+```
+
+`register(resource, filter)` returns the registry for chaining. It is
+fail-closed by omission: a resource you never register resolves to `deny-all`.
+
+## The filter — `ScopeFilter`
+
+A filter is `(ctx: ScopeFilterContext) => ScopeResult | Promise<ScopeResult>`. It
+receives everything needed to derive a `WHERE` from the SAME authorization data
+`can` / `hasRole` consult — **without re-querying the store**:
+
+| `ScopeFilterContext` field | Meaning |
+| -------------------------- | ------- |
+| `user`         | The resolved `{ type, id }` user reference. |
+| `action`       | The action/ability being scoped (e.g. `viewAny`, `posts.read`). |
+| `permissions`  | The user's effective permission names for the active tenant (role-derived ∪ direct, wildcard-aware). |
+| `roles`        | The user's effective role names for the active tenant. |
+| `tenant`       | The active `TenantScope`, or `undefined` (global). |
+
+A filter may return:
+
+- a **`ScopeConstraint`** built with the DSL below,
+- `true` → allow-all (sugar for `scopeAll`),
+- `false` / `null` / `undefined` → deny-all (sugar for `scopeNone`).
+
+It may be `async` — e.g. to look up the user's team ids before scoping.
+
+```ts
+registry.register(Document, async ({ user, roles }) => {
+  if (roles.includes('auditor')) return true // sees everything
+  const teamIds = await TeamMember.query().where('user_id', user.id).select('team_id')
+  return whereIn('team_id', teamIds.map((t) => t.teamId))
+})
+```
+
+## The constraint DSL
+
+Import the builders from `@adonis-agora/authz/scope`. They produce a small,
+pure-data condition AST (no callbacks, fully serializable) that the Lucid
+`accessibleBy` adapter compiles into a **parameterized, identifier-safe**
+`WHERE`. Column names are validated as safe identifiers; values are always bound,
+never interpolated.
+
+### Terminals
+
+```ts
+import { scopeAll, scopeNone } from '@adonis-agora/authz/scope'
+
+scopeAll  // { kind: 'all' }  — every row visible, no WHERE added
+scopeNone // { kind: 'none' } — no rows, an always-false predicate is applied
+```
+
+`scopeAll` / `scopeNone` are the explicit forms of the `true` / `false` sugar —
+return whichever reads better.
+
+### Leaf conditions
+
+```ts
+import { eq, where, whereIn } from '@adonis-agora/authz/scope'
+
+eq('author_id', user.id)                 // author_id = ?
+whereIn('team_id', [1, 2, 3])            // team_id IN (?, ?, ?)
+where('status', 'ne', 'archived')        // status != ?
+where('deleted_at', 'isNull')            // deleted_at IS NULL  (value ignored)
+where('views', 'gte', 100)               // views >= ?
+```
+
+`where(field, op, value?)` is the general leaf; `eq` and `whereIn` are shorthands
+for the two most common cases. Operators: `eq`, `ne`, `gt`, `gte`, `lt`, `lte`,
+`in`, `nin`, `isNull`, `isNotNull`.
+
+### Boolean groups
+
+```ts
+import { and, or } from '@adonis-agora/authz/scope'
+
+// AND — owner AND in-tenant
+and(eq('author_id', user.id), eq('tenant_id', tenant.tenantId))
+
+// OR — owner OR published
+or(eq('author_id', user.id), eq('published', true))
+
+// nested — (owner OR published) AND not-archived
+and(
+  or(eq('author_id', user.id), eq('published', true)),
+  where('status', 'ne', 'archived'),
+)
+```
+
+<Callout type="info">
+  **Empty-group identities:** `and()` with no nodes is `allow-all` (the AND
+  identity); `or()` with no nodes is `deny-all` (the OR zero). A single-node
+  `and`/`or` returns that node as-is. This lets you build groups conditionally —
+  `and(...conditions)` where `conditions` may be empty — without special-casing.
+</Callout>
+
+## Consuming the scope
+
+Once registered, filter any collection with `accessibleBy` — see the full
+contract and the `orWhere` caveat in
+[Concepts → Query scopes](/docs/authz/concepts#query-scopes-accessibleby):
+
+```ts
+import { accessibleBy } from '@adonis-agora/authz/scope'
+
+// Only the posts this user may see (owner ∪ published, per the filter above).
+const posts = await accessibleBy(Post.query(), authz, user, Post)
+
+// Scope by a specific action (defaults to 'viewAny'):
+const editable = await accessibleBy(Post.query(), authz, user, Post, { action: 'posts.edit' })
+```
+
+Or resolve the raw constraint yourself with `authz.scope(user, resource, options)`
+when you need the `ScopeConstraint` without a query builder (e.g. to serialize a
+query plan).

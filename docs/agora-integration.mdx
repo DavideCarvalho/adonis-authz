@@ -42,16 +42,25 @@ check time — no DB seeding.
 defineConfig({
   // A user holding one of these global roles is allowed everything.
   superAdminRoles: ['platform:super'],
-  // Global role → permissions/wildcards, unioned into permission checks.
-  globalRoleGrants: {
+  // Role → permissions/wildcards, unioned into permission checks.
+  roleGrants: {
     auditor: ['audit.*'],
   },
 })
 ```
 
 A super-admin global role short-circuits `can` and `hasRole` to allow.
-Otherwise, `globalRoleGrants` for the user's active global roles are unioned
-into the permission match before consulting the store.
+Otherwise, `roleGrants` for the user's **effective** roles are unioned into the
+permission match before consulting the store.
+
+<Callout type="warn">
+  **Renamed in a recent release.** `roleGrants` was formerly `globalRoleGrants`.
+  The name changed because the map now applies to the user's *effective* roles
+  (context ∪ `resolveRoles` ∪ store), not just global ones. The provider reads
+  **only** `roleGrants` — an old `globalRoleGrants` key is silently ignored, so
+  rename it. See [Effective roles](/docs/authz/config#effective-roles-resolveroles--rolegrants)
+  for the full model.
+</Callout>
 
 ## Event-driven provisioning
 

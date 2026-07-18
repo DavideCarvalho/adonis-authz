@@ -1,0 +1,137 @@
+---
+title: Route middleware
+description: AuthzRoleMiddleware — an any-of requireRole route guard on the user's effective roles (global ∪ app ∪ store), with guest and denied redirects.
+icon: Route
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Where [Bouncer abilities](/docs/authz/bouncer-integration) protect a controller
+action, `AuthzRoleMiddleware` protects a **route** — it is the "require role X"
+guard every app otherwise rewrites by hand. It gates on the user's
+[effective roles](#authzserviceeffectiveroles) (global ∪ app ∪ store), so a
+role asserted by a token claim, resolved from your domain tables, or assigned in
+the authz store all satisfy the same guard.
+
+The middleware is exported as the **default export** of the
+`@adonis-agora/authz/middleware` subpath.
+
+## Register it
+
+Wire it as a **named** middleware so routes can pass their own roles:
+
+```ts title="start/kernel.ts"
+import router from '@adonisjs/core/services/router'
+
+export const middleware = router.named({
+  requireRole: () => import('@adonis-agora/authz/middleware'),
+})
+```
+
+<Callout type="info">
+  The middleware receives `AuthzService` by constructor injection (`@inject()`) —
+  the container resolves a fresh instance per request and injects the service, so
+  there is no `container.make` service-locator call in the request path.
+</Callout>
+
+## Guard routes
+
+Pass the accepted roles per route. It is **any-of**: the request passes if the
+user holds at least one.
+
+```ts title="start/routes.ts"
+import router from '@adonisjs/core/services/router'
+import { middleware } from '#start/kernel'
+
+// A single role.
+router
+  .get('/coordinator', [CoordinatorController, 'index'])
+  .use(middleware.requireRole({ roles: ['COORDINATOR'] }))
+
+// Any-of: EITHER role passes.
+router
+  .get('/reports', [ReportsController, 'index'])
+  .use(middleware.requireRole({ roles: ['COORDINATOR', 'DIRECTOR'] }))
+
+// Redirect instead of 401/403 (server-rendered / Inertia apps).
+router
+  .group(() => {
+    router.get('/admin', [AdminController, 'dashboard'])
+  })
+  .use(
+    middleware.requireRole({
+      roles: ['ADMIN'],
+      guestRedirect: '/login',
+      deniedRedirect: '/unauthorized',
+    }),
+  )
+```
+
+## `RequireRoleOptions`
+
+| Option           | Type           | Default | Behavior |
+| ---------------- | -------------- | ------- | -------- |
+| `roles`          | `string[]`     | —       | **Required.** Accepted roles (any-of). |
+| `scope`          | `TenantScope?` | —       | Tenant scope forwarded to `effectiveRoles`. |
+| `guestRedirect`  | `string?`      | —       | Where to send an **unauthenticated** request. Without it → `401 { message: 'Unauthenticated' }`. |
+| `deniedRedirect` | `string?`      | —       | Where to send a request that is authenticated but lacks the role. Without it → `403`. |
+| `deniedMessage`  | `string?`      | `'Forbidden'` | The `403` body's `message` when there is no `deniedRedirect`. |
+
+### How it decides
+
+<Callout type="info">
+  1. Resolve the user from `ctx.auth.getUser()` (authkit) or `ctx.auth.user`
+     (a `@adonisjs/auth` guard) — structural, so it works with either and depends
+     on neither.
+  2. No user → `guestRedirect` if set, else `401 Unauthenticated`.
+  3. Compute `authz.effectiveRoles(user, options.scope)` and check that at least
+     one of `options.roles` is present.
+  4. No matching role → `deniedRedirect` if set, else `403` with `deniedMessage`.
+  5. Otherwise call `next()`.
+</Callout>
+
+Because it reads **effective** roles, `effectiveRoles` populates the request's
+global roles along the way — so `roles: ['ADMIN']` matches a token claim even
+when nothing is seeded in the store.
+
+## `AuthzService.effectiveRoles`
+
+The middleware's engine is a public method you can call directly. It is the
+union of the three role sources authz recognizes:
+
+```
+effectiveRoles(user, scope?)  =  context/global roles (token claim)
+                               ∪  app roles (the `resolveRoles` seam)
+                               ∪  store roles (assigned in the authz DB)
+```
+
+```ts
+import { AuthzService } from '@adonis-agora/authz'
+import app from '@adonisjs/core/services/app'
+
+const authz = await app.container.make(AuthzService)
+
+const roles = await authz.effectiveRoles(user)                 // global scope
+const scoped = await authz.effectiveRoles(user, { tenantId: 'acme' })
+```
+
+- The **global** roles come from the active Agora context store (written by
+  authkit) — no DB seeding.
+- The **app** roles come from the optional
+  [`resolveRoles`](/docs/authz/config#effective-roles-resolveroles--rolegrants)
+  config seam (e.g. a `user_roles` domain table).
+- The **store** roles are those assigned via `store.assignRole(...)`.
+
+It returns a de-duplicated union, tenant-filtered by `scope`. An
+anonymous/unmappable user yields `[]`. This is the exact set `hasRole` /
+`hasAnyRole` check against, and the same set `buildAuthzShare` pushes to the
+[frontend](/docs/authz/react), so the route guard, the Bouncer ability and the
+UI never disagree.
+
+<Callout type="info">
+  Need a **permission** guard on a route rather than a role? Check the
+  permission inside the action with a [Bouncer ability](/docs/authz/bouncer-integration)
+  (`ctx.bouncer.authorize('can', 'posts.edit')`), or filter a collection with a
+  [query scope](/docs/authz/query-scopes). `AuthzRoleMiddleware` is deliberately
+  role-only — the coarse gate that keeps whole route trees behind a role.
+</Callout>

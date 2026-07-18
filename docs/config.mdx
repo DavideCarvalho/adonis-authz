@@ -99,6 +99,115 @@ defineConfig({
 })
 ```
 
+## Effective roles: `resolveRoles` & `roleGrants`
+
+A user's **effective roles** are the union of three sources — and two config
+seams let you feed them without seeding the authz store:
+
+```
+effective roles  =  context/global roles (token claim, via authkit)
+                  ∪  app roles      (the `resolveRoles` seam)
+                  ∪  store roles    (assigned via store.assignRole)
+```
+
+Every decision — `can`, `hasRole`, `hasAnyRole`, the
+[route middleware](/docs/authz/middleware), a
+[query scope](/docs/authz/query-scopes) and the
+[frontend share](/docs/authz/react) — resolves against this same union, so they
+never disagree.
+
+### `resolveRoles` — app roles
+
+Roles that live in **your** domain (typically a `user_roles`-style table), not in
+the token and not in the authz store. Return them and they enter the union and
+get mapped by `roleGrants`, exactly like global roles. Optional — omit it and
+only the token and store decide.
+
+```ts
+defineConfig({
+  resolveRoles: async (user, scope) => {
+    const rows = await UserRole.query()
+      .where('user_id', user.id)
+      .if(scope, (q) => q.where('tenant_id', scope!.tenantId))
+    return rows.map((r) => r.role)
+  },
+})
+```
+
+The callback receives the resolved `{ type, id }` reference and the active
+`TenantScope`, so app roles can themselves be tenant-scoped.
+
+### `roleGrants` — role → permissions, no seed
+
+A `role → permissions/wildcards` map applied to the user's **effective** roles at
+check time, without seeding the store. Union it into permission checks to grant a
+role its abilities purely from config:
+
+```ts
+defineConfig({
+  roleGrants: {
+    editor: ['posts.*', 'comments.moderate'],
+    auditor: ['audit.*'],
+  },
+})
+```
+
+Now a user with the `editor` role (from any of the three sources) passes
+`can('posts.edit')` even though nothing was written to `authz_role_permission`.
+
+<Callout type="info">
+  `roleGrants` was formerly named `globalRoleGrants`. The provider reads **only**
+  `roleGrants` now; an old `globalRoleGrants` key is silently ignored. It was
+  renamed because it applies to *all* effective roles, not just global ones.
+</Callout>
+
+## Standalone schema helpers
+
+With `autoCreateSchema: false` (recommended for production) the store no longer
+creates its tables — you own the schema through a Lucid migration. The package
+exports the exact same DDL the store would otherwise run, so the two paths never
+drift:
+
+```ts title="database/migrations/xxxx_create_authz_tables.ts"
+import { BaseSchema } from '@adonisjs/lucid/schema'
+import { createAuthzTables, dropAuthzTables } from '@adonis-agora/authz'
+
+export default class extends BaseSchema {
+  async up() {
+    this.defer((db) => createAuthzTables(db))
+  }
+
+  async down() {
+    this.defer((db) => dropAuthzTables(db))
+  }
+}
+```
+
+- `createAuthzTables(db, { tables? })` — idempotent (`CREATE TABLE IF NOT EXISTS`),
+  dialect-aware (Postgres / MySQL / SQLite). Safe to call from a migration `up()`.
+- `dropAuthzTables(db, { tables? })` — idempotent (`DROP TABLE IF EXISTS`),
+  child-first, for the migration `down()`.
+- `AUTHZ_TABLES` — the default table names (`authz_roles`, `authz_permissions`,
+  `authz_role_permission`, `authz_user_role`, `authz_user_permission`).
+
+Pass matching `tables` overrides to **both** the store config and these helpers so
+they agree:
+
+```ts
+import { AUTHZ_TABLES } from '@adonis-agora/authz'
+
+const tables = { ...AUTHZ_TABLES, roles: 'rbac_roles' }
+
+// config/authz.ts → stores.lucid({ autoCreateSchema: false, tables })
+// migration       → createAuthzTables(db, { tables })
+```
+
+<Callout type="info">
+  `this.defer((db) => …)` hands the helpers a Lucid query client whose dialect is
+  read directly, so the `created_at` column type is chosen correctly
+  (`TIMESTAMP` on Postgres, `DATETIME` elsewhere) even inside a migration.
+</Callout>
+
 ## Sync catalog
 
 Declare roles → permissions to seed with `node ace authz:sync`:

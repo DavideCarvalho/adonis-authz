@@ -1,5 +1,5 @@
+import { inject } from '@adonisjs/core';
 import type { HttpContext } from '@adonisjs/core/http';
-import app from '@adonisjs/core/services/app';
 import type { NextFn } from '@adonisjs/core/types/http';
 import { AuthzService } from './authz_service.js';
 import type { TenantScope } from './user_ref.js';
@@ -45,17 +45,13 @@ export interface RequireRoleOptions {
  *
  * O usuário vem de `ctx.auth.getUser()` (authkit) ou `ctx.auth.user`; `effectiveRoles` popula os
  * papéis globais do contexto no caminho, então `roles: ['ADMIN']` casa pelo claim do token.
+ *
+ * O {@link AuthzService} entra por injeção de construtor (`@inject()`): o container do Adonis resolve o
+ * middleware por request e injeta o serviço — sem service locator (`container.make`) no meio do fluxo.
  */
+@inject()
 export default class AuthzRoleMiddleware {
-  /**
-   * Resolve o {@link AuthzService}. Default: pelo container (lazy, no request) — sem `@inject`, então
-   * o Adonis instancia o middleware sem args. Um resolver é injetável para teste.
-   */
-  #resolveAuthz: () => Promise<AuthzService>;
-
-  constructor(resolveAuthz?: () => Promise<AuthzService>) {
-    this.#resolveAuthz = resolveAuthz ?? (() => app.container.make(AuthzService));
-  }
+  constructor(private authz: AuthzService) {}
 
   async handle(ctx: HttpContext, next: NextFn, options: RequireRoleOptions) {
     const auth = (ctx as unknown as { auth?: AuthLike }).auth;
@@ -66,8 +62,7 @@ export default class AuthzRoleMiddleware {
         : ctx.response.unauthorized({ message: 'Unauthenticated' });
     }
 
-    const authz = await this.#resolveAuthz();
-    const roles = await authz.effectiveRoles(user, options.scope);
+    const roles = await this.authz.effectiveRoles(user, options.scope);
     if (!options.roles.some((role) => roles.includes(role))) {
       return options.deniedRedirect
         ? ctx.response.redirect(options.deniedRedirect)

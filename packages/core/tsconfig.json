@@ -5,6 +5,7 @@
     "outDir": "dist",
     "tsBuildInfoFile": ".tsbuildinfo",
     "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
     "types": ["node"]
   },
   "include": [

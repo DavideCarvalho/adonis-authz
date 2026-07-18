@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { AuthzService } from '../src/authz_service.js';
 import AuthzRoleMiddleware from '../src/middleware.js';
 
-/** Resolver de um AuthzService mínimo: só `effectiveRoles`, devolvendo os papéis fixados. */
-function fakeAuthz(roles: string[]): () => Promise<AuthzService> {
-  return async () => ({ effectiveRoles: async () => roles }) as unknown as AuthzService;
+/** AuthzService mínimo: só `effectiveRoles`, devolvendo os papéis fixados (injetado no construtor). */
+function fakeAuthz(roles: string[]): AuthzService {
+  return { effectiveRoles: async () => roles } as unknown as AuthzService;
 }
 
 /** ctx mínimo que registra qual método de resposta foi chamado. */

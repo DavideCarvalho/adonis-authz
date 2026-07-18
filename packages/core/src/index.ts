@@ -91,6 +91,10 @@ export type { AgoraContextAccessor } from './agora/context.js';
 export { authzAbilities, defineAuthzAbilities } from './bouncer/abilities.js';
 export type { AuthzAbilities } from './bouncer/abilities.js';
 
+// Route middleware (default export; registrar como named middleware `@adonis-agora/authz/middleware`).
+export { default as AuthzRoleMiddleware } from './middleware.js';
+export type { RequireRoleOptions } from './middleware.js';
+
 // Drivers-in-core config idiom.
 export { defineConfig, stores } from './define_config.js';
 export type { AuthzConfig } from './define_config.js';

@@ -1,5 +1,17 @@
 # @adonis-agora/authz
 
+## 0.8.0
+
+### Minor Changes
+
+- [#13](https://github.com/DavideCarvalho/adonis-authz/pull/13) [`e2cb451`](https://github.com/DavideCarvalho/adonis-authz/commit/e2cb45176db474b40b51bedf85277074f95b77a0) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - `AuthzRoleMiddleware` agora recebe o `AuthzService` por injeção de construtor (`@inject()`) em vez de
+  resolver pelo container no meio do `handle` (service locator). O container do Adonis instancia o
+  middleware por request e injeta o serviço — DI idiomática, sem `container.make` no fluxo.
+
+  O build passou a emitir `emitDecoratorMetadata`, necessário para o container ler os tipos do
+  construtor. Consumidores que registram o middleware como named middleware
+  (`() => import('@adonis-agora/authz/middleware')`) não precisam mudar nada.
+
 ## 0.7.0
 
 ### Minor Changes

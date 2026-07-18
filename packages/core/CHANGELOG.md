@@ -1,5 +1,23 @@
 # @adonis-agora/authz
 
+## 0.7.0
+
+### Minor Changes
+
+- [#11](https://github.com/DavideCarvalho/adonis-authz/pull/11) [`c9d2d0f`](https://github.com/DavideCarvalho/adonis-authz/commit/c9d2d0f4025a3b9063ad9fadaaed071a6f9cebdc) Thanks [@DavideCarvalho](https://github.com/DavideCarvalho)! - Novo middleware de rota `AuthzRoleMiddleware` (subpath `@adonis-agora/authz/middleware`) — exige um dos `roles` via `AuthzService.effectiveRoles` (global ∪ app ∪ store), cobrindo papéis globais (claim do token) e de app (DB) num só lugar. Substitui os middlewares "exige role X" que cada app reescreve por papel.
+
+  ```ts
+  // start/kernel.ts
+  export const middleware = router.named({
+    requireRole: () => import('@adonis-agora/authz/middleware'),
+  })
+  // rotas
+  router.get('/coord', ...).use(middleware.requireRole({ roles: ['COORDINATOR'] }))
+  router.get('/admin', ...).use(middleware.requireRole({ roles: ['ADMIN'], deniedRedirect: '/unauthorized' }))
+  ```
+
+  Opções: `roles` (any-of), `scope`, `guestRedirect` (senão 401), `deniedRedirect`/`deniedMessage` (senão 403). Lê o usuário de `ctx.auth.getUser()` (authkit) ou `ctx.auth.user` — estrutural, sem depender do authkit. Resolve o `AuthzService` lazy do container (sem `@inject`/reflect-metadata).
+
 ## 0.6.0
 
 ### Minor Changes

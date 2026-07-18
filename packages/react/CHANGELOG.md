@@ -1,5 +1,12 @@
 # @adonis-agora/authz-react
 
+## 1.0.0
+
+### Patch Changes
+
+- Updated dependencies [[`c9d2d0f`](https://github.com/DavideCarvalho/adonis-authz/commit/c9d2d0f4025a3b9063ad9fadaaed071a6f9cebdc)]:
+  - @adonis-agora/authz@0.7.0
+
 ## 0.1.0
 
 ### Minor Changes

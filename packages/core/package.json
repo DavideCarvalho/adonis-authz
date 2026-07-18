@@ -38,6 +38,11 @@
       "import": "./dist/src/mixins.js",
       "default": "./dist/src/mixins.js"
     },
+    "./middleware": {
+      "types": "./dist/src/middleware.d.ts",
+      "import": "./dist/src/middleware.js",
+      "default": "./dist/src/middleware.js"
+    },
     "./provisioning": {
       "types": "./dist/src/provisioning.d.ts",
       "import": "./dist/src/provisioning.js",

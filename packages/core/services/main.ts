@@ -1,5 +1,5 @@
-import app from '@adonisjs/core/services/app';
 import { AuthzService } from '../src/authz_service.js';
+import { getBootedApp } from './booted_app.js';
 
 /**
  * The async authorization-query surface of {@link AuthzService} this service singleton forwards.
@@ -16,15 +16,16 @@ export type AuthzQueryService = Pick<
 
 /**
  * Resolve the container-bound {@link AuthzService} ONCE and reuse it. Resolution is deferred to the
- * first method call — NOT a top-level `await app.container.make(...)` / `await app.booted(...)` —
- * so importing this module from `config/*` is safe: config loads DURING boot, before the container
- * bindings and `booted()` callbacks exist, and a top-level await there would deadlock the boot.
- * By the time any forwarded method actually runs (request / agent time) the app is booted and the
- * `AuthzService` singleton is resolvable.
+ * first method call (not at import), so importing this module from `config/*` is safe: config loads
+ * DURING boot, before the container bindings exist. The app is read from the provider-captured
+ * booted instance ({@link getBootedApp}) rather than `@adonisjs/core/services/app` — see
+ * {@link ./booted_app.js} for why that import is unreliable under pnpm. By the time any forwarded
+ * method runs (request / agent time) the provider has registered and the `AuthzService` singleton
+ * is resolvable.
  */
 let servicePromise: Promise<AuthzService> | undefined;
 const resolve = (): Promise<AuthzService> => {
-  servicePromise ??= app.container.make(AuthzService);
+  servicePromise ??= getBootedApp().container.make(AuthzService);
   return servicePromise;
 };
 
@@ -42,13 +43,15 @@ const resolve = (): Promise<AuthzService> => {
  * })
  * ```
  */
+// `async` forwards so a synchronous failure in `resolve()` (e.g. the provider not yet registered)
+// surfaces as a rejected promise, not a sync throw — these methods are typed as returning promises.
 const service: AuthzQueryService = {
-  can: (...args) => resolve().then((authz) => authz.can(...args)),
-  scope: (...args) => resolve().then((authz) => authz.scope(...args)),
-  hasRole: (...args) => resolve().then((authz) => authz.hasRole(...args)),
-  hasAnyRole: (...args) => resolve().then((authz) => authz.hasAnyRole(...args)),
-  effectiveRoles: (...args) => resolve().then((authz) => authz.effectiveRoles(...args)),
-  effectivePermissions: (...args) => resolve().then((authz) => authz.effectivePermissions(...args)),
+  can: async (...args) => (await resolve()).can(...args),
+  scope: async (...args) => (await resolve()).scope(...args),
+  hasRole: async (...args) => (await resolve()).hasRole(...args),
+  hasAnyRole: async (...args) => (await resolve()).hasAnyRole(...args),
+  effectiveRoles: async (...args) => (await resolve()).effectiveRoles(...args),
+  effectivePermissions: async (...args) => (await resolve()).effectivePermissions(...args),
 };
 
 export default service;

@@ -1,4 +1,5 @@
 import type { ApplicationService } from '@adonisjs/core/types';
+import { setBootedApp } from '../services/booted_app.js';
 import { AuthzService } from '../src/authz_service.js';
 import type { AuthzConfig } from '../src/define_config.js';
 import { ScopeRegistry } from '../src/scope.js';
@@ -8,16 +9,22 @@ import { ScopeRegistry } from '../src/scope.js';
  * active store driver in `config/authz.ts`. The Bouncer abilities published into
  * `app/abilities/authz.ts` resolve this service to answer DB-backed checks.
  *
- * Resolve it anywhere via:
+ * Resolve it anywhere via the service singleton:
  *
  * ```ts
- * const authz = await app.container.make(AuthzService)
+ * import authz from '@adonis-agora/authz/services/main'
  * ```
+ *
+ * or directly from the container: `await app.container.make(AuthzService)`.
  */
 export default class AuthzProvider {
   constructor(protected app: ApplicationService) {}
 
   register() {
+    // Hand the booted app to the service singleton so it never has to `import` an @adonisjs/core
+    // copy that may not be the one bin/server booted (see services/booted_app.ts).
+    setBootedApp(this.app);
+
     this.app.container.singleton(AuthzService, async () => {
       const config = this.app.config.get<AuthzConfig>('authz', {});
       const {

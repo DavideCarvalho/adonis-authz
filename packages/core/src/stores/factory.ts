@@ -39,13 +39,21 @@ export const stores = {
   },
 
   lucid(config: LucidStoreConfig = {}): StoreProvider {
-    return async () => {
-      const db = (await import('@adonisjs/lucid/services/db')).default;
+    return async (ctx) => {
+      // Resolve the db from the container (`lucid.db`) using the passed `app` — NOT via
+      // `@adonisjs/lucid/services/db`. That service singleton only assigns its default inside
+      // `app.booted(...)` (which runs AFTER every provider's `boot()`), and worse, an `await import()` of
+      // it from this library can resolve a module copy whose `app` is undefined
+      // (`Cannot read properties of undefined (reading 'booted')`) when the AuthzService is built during
+      // boot — which made `make(AuthzService)` throw and take down anything depending on it (e.g. the
+      // agent's tool authorizer denied ALL tools fail-closed). The `lucid.db` alias is registered in the
+      // database provider's `register()` (before any `boot()`) and is the exact binding `services/db`
+      // itself resolves, so it works here and keeps `@adonisjs/lucid` an optional peer.
+      const container = ctx.app.container as unknown as { make(binding: string): Promise<unknown> };
+      const db = (await container.make('lucid.db')) as { connection(name: string): unknown };
       const { LucidPermissionStore } = await import('./lucid.js');
       const { connection, ...rest } = config;
-      const client = connection
-        ? (db.connection(connection) as unknown as LucidDatabase)
-        : (db as unknown as LucidDatabase);
+      const client = (connection ? db.connection(connection) : db) as unknown as LucidDatabase;
       return new LucidPermissionStore(client, rest);
     };
   },

@@ -28,6 +28,11 @@
       "import": "./dist/configure.js",
       "default": "./dist/configure.js"
     },
+    "./services/main": {
+      "types": "./dist/services/main.d.ts",
+      "import": "./dist/services/main.js",
+      "default": "./dist/services/main.js"
+    },
     "./commands": {
       "types": "./dist/commands/main.d.ts",
       "import": "./dist/commands/main.js",

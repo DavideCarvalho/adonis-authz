@@ -17,7 +17,11 @@ export default defineConfig({
     environment: 'node',
     globals: false,
     setupFiles: ['reflect-metadata'],
-    include: ['src/**/*.{spec,test}.ts', 'test/**/*.{spec,test}.ts'],
+    include: [
+      'src/**/*.{spec,test}.ts',
+      'services/**/*.{spec,test}.ts',
+      'test/**/*.{spec,test}.ts',
+    ],
     pool: 'forks',
   },
 });

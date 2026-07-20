@@ -1,6 +1,6 @@
 # @adonis-agora/authz-react
 
-## 4.0.0
+## 3.0.1
 
 ### Patch Changes
 

@@ -1,6 +1,6 @@
 {
   "name": "@adonis-agora/authz-react",
-  "version": "4.0.0",
+  "version": "3.0.1",
   "description": "React/Inertia bindings for @adonis-agora/authz: AuthzProvider, useAuthz, useCan, <Can>, and a server-side buildAuthzShare() for the Inertia share.",
   "license": "MIT",
   "repository": {
@@ -33,7 +33,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "peerDependencies": {
-    "@adonis-agora/authz": "^0.10.0",
+    "@adonis-agora/authz": ">=0.9.0 <1",
     "@inertiajs/react": "^3.3.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"

@@ -36,6 +36,8 @@ export default class AuthzProvider {
         resolveTenant,
         superAdminRoles,
         resolveRoles,
+        resolveRoleMembers,
+        resolveGlobalRoleMembers,
         roleGrants,
         scopes,
       } = config;
@@ -72,6 +74,8 @@ export default class AuthzProvider {
         ...(resolveTenant !== undefined ? { resolveTenant } : {}),
         ...(superAdminRoles !== undefined ? { superAdminRoles } : {}),
         ...(resolveRoles !== undefined ? { resolveRoles } : {}),
+        ...(resolveRoleMembers !== undefined ? { resolveRoleMembers } : {}),
+        ...(resolveGlobalRoleMembers !== undefined ? { resolveGlobalRoleMembers } : {}),
         ...(roleGrants !== undefined ? { roleGrants } : {}),
         ...(registry !== undefined ? { scopes: registry } : {}),
       });

@@ -18,7 +18,8 @@ function appWithAuthzConfig(authzConfig: unknown) {
   return {
     config: { get: (key: string, dflt: unknown) => (key === 'authz' ? authzConfig : dflt) },
     container: {
-      singleton: (token: unknown, factory: () => Promise<unknown>) => singletons.set(token, factory),
+      singleton: (token: unknown, factory: () => Promise<unknown>) =>
+        singletons.set(token, factory),
       make: async (token: unknown) => {
         if (!instances.has(token)) instances.set(token, await singletons.get(token)?.());
         return instances.get(token);

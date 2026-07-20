@@ -1,6 +1,13 @@
 # @adonis-agora/authz-react
 
-## 3.0.1
+## 0.2.0
+
+### Version reset to 0.x
+
+This package started at `0.1.0` but a changesets peer-dependency quirk majored it on every
+`@adonis-agora/authz` release (`0.1.0 → 1.0.0 → 2.0.0 → 3.0.0`), overstating its maturity. The
+package is pre-1.0. The `@adonis-agora/authz` peer range is now `>=0.9.0 <1`, so authz 0.x minors
+no longer force a major here. The `1.0.0`–`3.0.1` versions are deprecated; use `0.x`.
 
 ### Patch Changes
 

@@ -85,3 +85,125 @@ describe('AuthzService', () => {
     expect(await service.can({ uid: 'abc' }, 'org.manage')).toBe(true);
   });
 });
+
+describe('AuthzService.usersWithRole', () => {
+  it('unions the store, domain seam, and global seam', async () => {
+    const { store, service } = makeService({
+      resolveRoleMembers: () => ['2'],
+      resolveGlobalRoleMembers: () => ['3'],
+    });
+    await store.assignRole({ type: 'user', id: '1' }, 'editor');
+
+    const users = await service.usersWithRole('editor');
+    expect(users).toEqual(
+      expect.arrayContaining([
+        { type: 'user', id: '1' },
+        { type: 'user', id: '2' },
+        { type: 'user', id: '3' },
+      ]),
+    );
+    expect(users).toHaveLength(3);
+  });
+
+  it('dedups when the same (type,id) comes from two sources', async () => {
+    const { store, service } = makeService({
+      resolveRoleMembers: () => ['1'], // same as the store ref below
+      resolveGlobalRoleMembers: () => ['1'], // and the global seam too
+    });
+    await store.assignRole({ type: 'user', id: '1' }, 'editor');
+
+    const users = await service.usersWithRole('editor');
+    expect(users).toEqual([{ type: 'user', id: '1' }]);
+  });
+
+  it('normalizes bare-string ids to the default user type', async () => {
+    const { service } = makeService({
+      resolveRoleMembers: () => ['42'],
+      resolveGlobalRoleMembers: () => [7], // number id too
+    });
+    const users = await service.usersWithRole('editor');
+    expect(users).toEqual(
+      expect.arrayContaining([
+        { type: 'user', id: '42' },
+        { type: 'user', id: '7' },
+      ]),
+    );
+    expect(users).toHaveLength(2);
+  });
+
+  it('normalizes UserRefInput objects (keeping their type)', async () => {
+    const { service } = makeService({
+      resolveRoleMembers: () => [{ type: 'account', id: 'abc' }],
+      resolveGlobalRoleMembers: () => [{ id: 9 }], // no type → default 'user'
+    });
+    const users = await service.usersWithRole('editor');
+    expect(users).toEqual(
+      expect.arrayContaining([
+        { type: 'account', id: 'abc' },
+        { type: 'user', id: '9' },
+      ]),
+    );
+    expect(users).toHaveLength(2);
+  });
+
+  it('treats absent seams as empty (store-only results)', async () => {
+    const { store, service } = makeService();
+    await store.assignRole({ type: 'user', id: '1' }, 'editor');
+    await store.assignRole({ type: 'user', id: '2' }, 'editor');
+    const users = await service.usersWithRole('editor');
+    expect(users).toEqual(
+      expect.arrayContaining([
+        { type: 'user', id: '1' },
+        { type: 'user', id: '2' },
+      ]),
+    );
+    expect(users).toHaveLength(2);
+  });
+
+  it('returns [] for a role nobody holds', async () => {
+    const { service } = makeService();
+    expect(await service.usersWithRole('ghost')).toEqual([]);
+  });
+
+  it('runs the three sources in parallel', async () => {
+    const order: string[] = [];
+    const slow = (label: string, ms: number, ids: string[]) => () =>
+      new Promise<string[]>((r) => {
+        order.push(`start:${label}`);
+        setTimeout(() => {
+          order.push(`end:${label}`);
+          r(ids);
+        }, ms);
+      });
+    const { service } = makeService({
+      resolveRoleMembers: slow('domain', 30, ['2']),
+      resolveGlobalRoleMembers: slow('global', 10, ['3']),
+    });
+    const users = await service.usersWithRole('editor');
+    expect(users).toEqual(
+      expect.arrayContaining([
+        { type: 'user', id: '2' },
+        { type: 'user', id: '3' },
+      ]),
+    );
+    // Both started before either finished → concurrent, not sequential.
+    expect(order.slice(0, 2)).toEqual(expect.arrayContaining(['start:domain', 'start:global']));
+    expect(order.indexOf('end:global')).toBeLessThan(order.indexOf('end:domain'));
+  });
+
+  it('passes the resolved tenant scope to the store and seams', async () => {
+    let seamScope: string | undefined = 'unset';
+    const { store, service } = makeService({
+      tenant: () => 'acme',
+      resolveRoleMembers: (_role, scope) => {
+        seamScope = scope?.tenantId;
+        return [];
+      },
+    });
+    await store.assignRole({ type: 'user', id: '1' }, 'editor', { tenantId: 'acme' });
+    // The store's tenant-visibility means the acme assignee shows only under acme scope.
+    const users = await service.usersWithRole('editor');
+    expect(users).toEqual([{ type: 'user', id: '1' }]);
+    expect(seamScope).toBe('acme');
+  });
+});

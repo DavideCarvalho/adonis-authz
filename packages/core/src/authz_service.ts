@@ -14,6 +14,7 @@ import {
   type ResolveUserRef,
   type TenantScope,
   type UserRef,
+  type UserRefInput,
   defaultResolveUserRef,
   normalizeUserRef,
 } from './user_ref.js';
@@ -64,6 +65,30 @@ export interface AuthzServiceOptions {
    */
   resolveRoles?: (user: UserRef, scope?: TenantScope) => Promise<string[]> | string[];
   /**
+   * Domain reverse seam — the reverse counterpart of {@link resolveRoles}. Given a role, return the
+   * user ids/refs that hold it in the app's OWN role store (typically a domain table, e.g.
+   * `user_roles`), the source that is neither in the token nor in the authz store. Its results join
+   * the union of {@link AuthzService.usersWithRole}. Optional: absent → only the authz store and the
+   * global seam contribute. Bare `string` ids are normalized to the default user type; a
+   * {@link UserRefInput} object is normalized as-is.
+   */
+  resolveRoleMembers?: (
+    role: string,
+    scope?: TenantScope,
+  ) => Promise<Array<string | UserRefInput>> | Array<string | UserRefInput>;
+  /**
+   * Global/IdP reverse seam — the reverse counterpart of the global context (token) role claim.
+   * Given a role, return the user ids/refs that hold it as an IdP/global role (e.g. scanning the
+   * authenticator's accounts by their `globalRoles`). authz owns the "global" concept so it can layer
+   * global-specific policy later (e.g. `superAdminRoles`); the authenticator gains no role-query
+   * method. Its results join the union of {@link AuthzService.usersWithRole}. Optional: absent → the
+   * global side contributes nothing.
+   */
+  resolveGlobalRoleMembers?: (
+    role: string,
+    scope?: TenantScope,
+  ) => Promise<Array<string | UserRefInput>> | Array<string | UserRefInput>;
+  /**
    * Mapa role → permissões/wildcards, aplicado às roles EFETIVAS (contexto + resolver) sem seed no
    * store. (Antes: `globalRoleGrants`; renomeado porque não é só das roles globais.)
    */
@@ -105,6 +130,18 @@ export class AuthzService {
   private readonly resolveRolesFn:
     | ((user: UserRef, scope?: TenantScope) => Promise<string[]> | string[])
     | undefined;
+  private readonly resolveRoleMembersFn:
+    | ((
+        role: string,
+        scope?: TenantScope,
+      ) => Promise<Array<string | UserRefInput>> | Array<string | UserRefInput>)
+    | undefined;
+  private readonly resolveGlobalRoleMembersFn:
+    | ((
+        role: string,
+        scope?: TenantScope,
+      ) => Promise<Array<string | UserRefInput>> | Array<string | UserRefInput>)
+    | undefined;
 
   /** The query-scope registry (resource → scope filter). See {@link scope}. */
   readonly scopes: ScopeRegistry;
@@ -118,6 +155,8 @@ export class AuthzService {
     this.superAdminRoles = new Set(options.superAdminRoles ?? []);
     this.roleGrants = options.roleGrants;
     this.resolveRolesFn = options.resolveRoles;
+    this.resolveRoleMembersFn = options.resolveRoleMembers;
+    this.resolveGlobalRoleMembersFn = options.resolveGlobalRoleMembers;
     this.scopes = options.scopes ?? new ScopeRegistry();
   }
 
@@ -356,5 +395,37 @@ export class AuthzService {
     const scope = this.currentScope(options.scope);
     const owned = new Set(await this.#effectiveRolesFor(ref, scope));
     return roles.some((r) => owned.has(r));
+  }
+
+  /**
+   * The reverse of {@link effectiveRoles}: every user with `role` as an EFFECTIVE role — the union of
+   * the authz store (`getUsersForRole`) ∪ the domain reverse seam (`resolveRoleMembers`) ∪ the
+   * global/IdP reverse seam (`resolveGlobalRoleMembers`). The three sources run in parallel; an
+   * absent seam contributes nothing. Bare `string` ids are normalized to the default user type (the
+   * same normalization used everywhere refs are keyed), `UserRefInput` objects via the existing
+   * normalizer; results are deduped by `(type, id)`. The tenant scope defaults consistently with
+   * {@link hasRole}/{@link effectiveRoles} via {@link currentScope}.
+   */
+  async usersWithRole(role: string, scope?: TenantScope): Promise<UserRef[]> {
+    const tenant = this.currentScope(scope);
+    const [storeUsers, roleMembers, globalRoleMembers] = await Promise.all([
+      this.store.getUsersForRole(role, tenant),
+      this.resolveRoleMembersFn ? this.resolveRoleMembersFn(role, tenant) : [],
+      this.resolveGlobalRoleMembersFn ? this.resolveGlobalRoleMembersFn(role, tenant) : [],
+    ]);
+
+    const seen = new Set<string>();
+    const out: UserRef[] = [];
+    const add = (input: string | UserRefInput): void => {
+      const ref = normalizeUserRef(input);
+      const key = `${ref.type} ${ref.id}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push(ref);
+    };
+    for (const ref of storeUsers) add(ref);
+    for (const member of roleMembers) add(member);
+    for (const member of globalRoleMembers) add(member);
+    return out;
   }
 }

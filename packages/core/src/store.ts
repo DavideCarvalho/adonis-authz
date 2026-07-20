@@ -41,6 +41,13 @@ export interface PermissionStore {
 
   /** Role names for a user, tenant-filtered. */
   getRolesForUser(user: UserRef, scope?: TenantScope): Promise<string[]>;
+  /**
+   * Reverse of {@link getRolesForUser}: every user that holds `role` in the
+   * store, tenant-filtered with the SAME visibility rule (a global request sees
+   * only global assignments; a tenant request sees global AND that tenant's).
+   * Returns `{ type, id }` refs.
+   */
+  getUsersForRole(role: string, scope?: TenantScope): Promise<UserRef[]>;
   /** Effective permission names for a user (role-derived ∪ direct). */
   getPermissionsForUser(user: UserRef, scope?: TenantScope): Promise<string[]>;
 

@@ -216,6 +216,19 @@ export class LucidPermissionStore implements PermissionStore {
     return rows.map((r) => r.name as string);
   }
 
+  async getUsersForRole(role: string, scope?: TenantScope): Promise<UserRef[]> {
+    await this.ready();
+    const tenant = this.tenantClause(scope);
+    const rows = await this.query(
+      `SELECT DISTINCT ur.user_type AS user_type, ur.user_id AS user_id
+       FROM ${this.t.userRole} ur
+       JOIN ${this.t.roles} r ON r.id = ur.role_id
+       WHERE r.name = ? AND ${tenant.sql}`,
+      [role, ...tenant.bindings],
+    );
+    return rows.map((r) => ({ type: r.user_type as string, id: String(r.user_id) }));
+  }
+
   async getPermissionsForUser(user: UserRef, scope?: TenantScope): Promise<string[]> {
     await this.ready();
     const tenant = this.tenantClause(scope);

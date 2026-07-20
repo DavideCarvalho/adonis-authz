@@ -119,5 +119,64 @@ export function runPermissionStoreContract(name: string, factory: StoreFactory):
       const perms = await store.getRolePermissions('editor');
       expect(perms).toEqual(expect.arrayContaining(['posts.edit', 'posts.delete']));
     });
+
+    it('reverse-resolves the users holding a role (getUsersForRole)', async () => {
+      const store = await factory();
+      await store.createRole('editor');
+      await store.assignRole(alice, 'editor');
+      await store.assignRole(bob, 'editor');
+      // A user with a DIFFERENT role must not appear.
+      const carol: UserRef = { type: 'user', id: '3' };
+      await store.assignRole(carol, 'viewer');
+
+      const editors = await store.getUsersForRole('editor');
+      expect(editors).toEqual(
+        expect.arrayContaining([
+          { type: 'user', id: '1' },
+          { type: 'user', id: '2' },
+        ]),
+      );
+      expect(editors).toHaveLength(2);
+      expect(editors).not.toContainEqual({ type: 'user', id: '3' });
+      // Unknown role → empty.
+      expect(await store.getUsersForRole('nobody')).toEqual([]);
+    });
+
+    it('reverse-resolves preserving the polymorphic user type', async () => {
+      const store = await factory();
+      const adminUser: UserRef = { type: 'admin', id: '1' };
+      await store.assignRole(adminUser, 'superuser');
+      await store.assignRole({ type: 'user', id: '1' }, 'superuser');
+      const users = await store.getUsersForRole('superuser');
+      expect(users).toContainEqual({ type: 'admin', id: '1' });
+      expect(users).toContainEqual({ type: 'user', id: '1' });
+      expect(users).toHaveLength(2);
+    });
+
+    it('reverse-resolves with tenant visibility (getUsersForRole)', async () => {
+      const store = await factory();
+      // Global assignment for alice; tenant t1 assignment for bob.
+      await store.assignRole(alice, 'editor');
+      await store.assignRole(bob, 'editor', { tenantId: 't1' });
+
+      // Global request: only the global assignee.
+      const global = await store.getUsersForRole('editor');
+      expect(global).toEqual([{ type: 'user', id: '1' }]);
+
+      // t1 request: global + t1's own.
+      const t1 = await store.getUsersForRole('editor', { tenantId: 't1' });
+      expect(t1).toEqual(
+        expect.arrayContaining([
+          { type: 'user', id: '1' },
+          { type: 'user', id: '2' },
+        ]),
+      );
+      expect(t1).toHaveLength(2);
+
+      // A different tenant must NOT see t1's assignee.
+      const t2 = await store.getUsersForRole('editor', { tenantId: 't2' });
+      expect(t2).toEqual([{ type: 'user', id: '1' }]);
+      expect(t2).not.toContainEqual({ type: 'user', id: '2' });
+    });
   });
 }

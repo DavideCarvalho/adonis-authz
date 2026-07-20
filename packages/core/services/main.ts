@@ -11,7 +11,13 @@ import { getBootedApp } from './booted_app.js';
  */
 export type AuthzQueryService = Pick<
   AuthzService,
-  'can' | 'scope' | 'hasRole' | 'hasAnyRole' | 'effectiveRoles' | 'effectivePermissions'
+  | 'can'
+  | 'scope'
+  | 'hasRole'
+  | 'hasAnyRole'
+  | 'effectiveRoles'
+  | 'effectivePermissions'
+  | 'usersWithRole'
 >;
 
 /**
@@ -52,6 +58,7 @@ const service: AuthzQueryService = {
   hasAnyRole: async (...args) => (await resolve()).hasAnyRole(...args),
   effectiveRoles: async (...args) => (await resolve()).effectiveRoles(...args),
   effectivePermissions: async (...args) => (await resolve()).effectivePermissions(...args),
+  usersWithRole: async (...args) => (await resolve()).usersWithRole(...args),
 };
 
 export default service;

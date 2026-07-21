@@ -1,0 +1,252 @@
+# `@adonis-agora/authz-react`
+
+Client-side authorization for **Inertia + React**, mirroring the server's decisions in your frontend
+— part of the [Agora](https://github.com/DavideCarvalho) ecosystem, the React binding for
+[`@adonis-agora/authz`](../core).
+
+`@adonis-agora/authz-react` mirrors the server's authorization decisions in your Inertia + React
+frontend, so a button you hide with `<Can>` and a route your Bouncer ability protects agree on
+exactly the same rule. The package ships two entry points:
+
+- **`@adonis-agora/authz-react`** — the client barrel: the `<AuthzProvider>` context, the `useAuthz` /
+  `useCan` hooks, the `<Can>` gating component and the wildcard matcher. Client-safe: it never imports
+  `@adonis-agora/authz`, so the server engine never lands in your browser bundle.
+- **`@adonis-agora/authz-react/server`** — the single server helper, `buildAuthzShare()`, which turns
+  an `AuthzService` + a user into the payload the client reads.
+
+**Fail-closed everywhere.** With no share available — logged-out, outside an Inertia `<App>`, or
+before the provider mounts — `useAuthz()` returns `{ roles: [], permissions: [] }`, so `useCan()` is
+`false` and `<Can>` renders its `fallback`. The UI never shows a control the user can't use.
+
+## Install
+
+```sh
+npm i @adonis-agora/authz-react
+```
+
+Peer dependencies (an Inertia + React Adonis app already has these):
+
+| Peer | Version |
+|---|---|
+| `@adonis-agora/authz` | `>=0.9.0 <1` |
+| `@inertiajs/react` | `^3.3.0` |
+| `react` | `^19.2.6` |
+| `react-dom` | `^19.2.6` |
+
+## The data flow
+
+The client never re-computes authorization. The server resolves the user's **effective** roles and
+permissions once — the same union `can()` consults — and ships them as an Inertia shared prop. Every
+client primitive decides from that snapshot.
+
+### 1. Push the share from the server
+
+`buildAuthzShare()` reads `effectiveRoles` / `effectivePermissions` (store ∪ `roleGrants` ∪
+`resolveRoles` ∪ context), so what the UI sees matches what the server would decide. Call it in the
+Inertia middleware's `sharedData`.
+
+```ts
+// config/inertia.ts
+import { defineConfig } from '@adonisjs/inertia'
+import { AuthzService } from '@adonis-agora/authz'
+import { buildAuthzShare } from '@adonis-agora/authz-react/server'
+
+export default defineConfig({
+  sharedData: {
+    // `ctx.auth.user` works with @adonisjs/auth; use ctx.auth.getUser() for authkit.
+    authz: async (ctx) => {
+      const authz = await ctx.containerResolver.make(AuthzService)
+      return buildAuthzShare(authz, ctx.auth?.user ?? null)
+    },
+  },
+})
+```
+
+`buildAuthzShare(authz, user, scope?)` returns `{ roles, permissions }`. A `null`/`undefined` user
+(anonymous) yields the empty share — no leak. Pass a `TenantScope` as the third argument to snapshot a
+specific tenant's grants.
+
+### 2. Type the shared prop
+
+`AuthzSharedProps` is the Inertia shared-prop contract the client reads. It has an index signature, so
+you can intersect it with your own shared props.
+
+```ts
+// types/inertia.ts
+import type { AuthzSharedProps } from '@adonis-agora/authz-react'
+
+export interface AppPageProps extends AuthzSharedProps {
+  user: { id: number; fullName: string } | null
+}
+```
+
+### 3. Gate the UI
+
+`useCan`, `useAuthz` and `<Can>` read `usePage().props.authz` automatically — no provider required
+inside a live Inertia app.
+
+```tsx
+// resources/js/pages/posts/index.tsx
+import { Can, useCan, useAuthz } from '@adonis-agora/authz-react'
+
+export default function PostsIndex() {
+  const canCreate = useCan('posts.create') // wildcard-aware
+  const { roles } = useAuthz() // raw snapshot
+
+  return (
+    <div>
+      {canCreate && <a href="/posts/new">New post</a>}
+
+      <Can permission="posts.edit">
+        <button>Edit</button>
+      </Can>
+
+      <Can role="admin" fallback={<span>Read-only</span>}>
+        <button>Delete</button>
+      </Can>
+
+      {roles.includes('admin') && <AdminBadge />}
+    </div>
+  )
+}
+```
+
+## Hooks
+
+### `useAuthz()`
+
+Returns the raw `{ roles: string[]; permissions: string[] }` snapshot — the effective grants for the
+current user. Precedence: an explicit `<AuthzProvider>` value wins over the Inertia shared prop
+(`usePage().props.authz`); with neither, it returns the empty share.
+
+```tsx
+import { useAuthz } from '@adonis-agora/authz-react'
+
+function RoleBadges() {
+  const { roles } = useAuthz()
+  return <>{roles.map((r) => <span key={r} className="badge">{r}</span>)}</>
+}
+```
+
+`usePage()` throws outside an Inertia `<App>`; `useAuthz` catches that so the hook (and everything
+built on it) stays testable with just an `<AuthzProvider>`, without mounting the whole Inertia tree.
+
+### `useCan(permission)`
+
+Wildcard-aware boolean check against the snapshot's `permissions`. The granted side may use wildcards
+(`posts.*`), the checked ability is always literal — the same matching rules as the server.
+
+```tsx
+const canPublish = useCan('posts.publish')
+// A user granted `posts.*` → true. Anonymous / no share → false.
+```
+
+## `<Can>` — the gating component
+
+Renders `children` only when the user satisfies `permission` (wildcard-aware) or holds `role` (exact
+match); otherwise it renders `fallback` (default `null`). Fail-closed: with neither prop supplied, or
+no share available, it renders nothing.
+
+```tsx
+import { Can } from '@adonis-agora/authz-react'
+
+// permission gate (wildcards apply)
+<Can permission="posts.edit">
+  <EditButton />
+</Can>
+
+// role gate (exact)
+<Can role="admin">
+  <DangerZone />
+</Can>
+
+// with an explicit fallback
+<Can permission="billing.manage" fallback={<UpgradePrompt />}>
+  <BillingSettings />
+</Can>
+```
+
+`CanProps`:
+
+| Prop | Type | Notes |
+|---|---|---|
+| `permission` | `string?` | Wildcard-aware permission to check. |
+| `role` | `string?` | Role to check (exact match against `roles`). |
+| `fallback` | `ReactNode?` | Rendered when denied. Default `null`. |
+| `children` | `ReactNode` | Rendered when allowed. |
+
+When both `permission` and `role` are passed, `permission` takes precedence — `role` is only consulted
+if `permission` is omitted. Use two nested `<Can>`s (an AND) if you need both.
+
+## `<AuthzProvider>` / `AuthzContext`
+
+The provider is **optional** — inside a live Inertia app the primitives read the shared prop directly.
+Reach for it when there is no Inertia page context: unit tests, Storybook, or a non-Inertia React
+shell that wants to inject the snapshot by hand. A provided value takes precedence over any Inertia
+shared prop.
+
+```tsx
+// posts-index.test.tsx
+import { render, screen } from '@testing-library/react'
+import { AuthzProvider } from '@adonis-agora/authz-react'
+import PostsIndex from '#pages/posts/index'
+
+test('shows the edit button for editors', () => {
+  render(
+    <AuthzProvider value={{ roles: ['editor'], permissions: ['posts.*'] }}>
+      <PostsIndex />
+    </AuthzProvider>,
+  )
+  expect(screen.getByText('Edit')).toBeVisible()
+})
+```
+
+- `AuthzContextValue` — `{ roles: string[]; permissions: string[] }`, the shape the provider carries.
+- `AuthzProviderProps` — `{ value: AuthzContextValue; children: ReactNode }`.
+- `AuthzContext` — the raw React context, exported for advanced composition (e.g. a custom provider
+  that derives the value differently). Reading it directly returns `undefined` when no provider is
+  mounted; prefer `useAuthz()`, which folds in the Inertia fallback and the empty-share default.
+
+## Client-safe matcher
+
+The same wildcard matcher the server uses, ported with **no** server import so it never drags
+`@adonis-agora/authz` into the browser bundle. Useful for gating against an ad-hoc permission set
+(e.g. one you fetched yourself).
+
+```ts
+import { permissionMatches, permissionSatisfied } from '@adonis-agora/authz-react'
+
+permissionMatches('posts.*', 'posts.edit') // true  (granted, required)
+permissionMatches('posts', 'posts.edit') // false (needs a trailing *)
+permissionSatisfied(['billing.*', 'posts.read'], 'billing.refund') // true
+```
+
+- `permissionMatches(granted, required)` — does a single granted pattern match the (always-literal)
+  required ability?
+- `permissionSatisfied(granted, required)` — does **any** pattern in the granted iterable match? This
+  is what `useCan` / `<Can>` run over the snapshot.
+
+## Server subpath — `AuthzShare`
+
+`@adonis-agora/authz-react/server` exports `buildAuthzShare()` and its return type `AuthzShare`
+(`{ roles: string[]; permissions: string[] }`). It is the only export that imports `AuthzService`,
+which is why it lives on a separate subpath — importing it from a client component would pull the
+server engine into the bundle. Keep it to server files (the Inertia middleware, tests).
+
+```ts
+import { buildAuthzShare, type AuthzShare } from '@adonis-agora/authz-react/server'
+```
+
+`buildAuthzShare` only needs the `effectiveRoles` / `effectivePermissions` slice of `AuthzService`, so
+a stub with just those two methods satisfies it in a test.
+
+## Links
+
+- Repo: https://github.com/DavideCarvalho/adonis-authz
+- Docs: https://github.com/DavideCarvalho/adonis-authz/blob/master/docs/react.mdx
+- Changelog: https://github.com/DavideCarvalho/adonis-authz/blob/master/packages/react/CHANGELOG.md
+- Server package: [`@adonis-agora/authz`](https://github.com/DavideCarvalho/adonis-authz/tree/master/packages/core)
+
+## License
+
+MIT
